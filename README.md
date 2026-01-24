@@ -34,15 +34,47 @@ This repository provides example MuJoCo simulations that can be controlled via W
 
 ## Quick Start
 
-### 1. Install Julia
+### Using Mise (Recommended)
 
-Ensure you have [Julia](https://julialang.org/downloads/) installed on your system.
-
-### 2. Initialize the Project
+This project uses [mise](https://mise.jdx.dev) for tool version management, environment configuration, and task running.
 
 ```bash
 # Clone with submodules
-git clone --recursive <repo-url>
+git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
+cd geti-action-mujoco-sim
+
+# Trust and install tools (installs Julia 1.12.4)
+mise trust && mise install
+
+# Install dependencies and MuJoCo visualizer
+mise run setup
+
+# Run SO101 with WebSocket control
+mise run so101
+
+# Run Trossen WXAI with WebSocket control
+mise run trossen
+```
+
+**Available tasks:**
+
+| Task | Description |
+|------|-------------|
+| `mise run setup` | Install dependencies and MuJoCo visualizer |
+| `mise run so101` | Run SO101 robot with WebSocket control |
+| `mise run trossen` | Run Trossen robot with WebSocket control |
+| `mise run so101-basic` | Run SO101 basic demo (no WebSocket) |
+| `mise run trossen-basic` | Run Trossen basic demo (no WebSocket) |
+| `mise run format` | Format all Julia code |
+| `mise run client` | Run WebSocket test client |
+
+### Alternative (Without Mise)
+
+If you prefer not to use mise, ensure [Julia](https://julialang.org/downloads/) is installed:
+
+```bash
+# Clone with submodules
+git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
 cd geti-action-mujoco-sim
 
 # Install dependencies
@@ -50,19 +82,15 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
 # Install MuJoCo visualizer (first time only)
 julia --project=. -e 'using MuJoCo; install_visualiser()'
-```
 
-### 3. Run a Simulation
-
-```bash
-# SO101 with WebSocket control (recommended)
+# Run SO101 with WebSocket control
 julia --project=. -t 4 examples/so101/websocket_sim.jl
 
-# Trossen WXAI with WebSocket control
+# Run Trossen WXAI with WebSocket control
 julia --project=. -t 4 examples/trossen/websocket_sim.jl
 ```
 
-> **Note**: The `-t 4` flag enables multi-threading, which is required for WebSocket simulations.
+> **Note**: The `-t 4` flag enables multi-threading. With mise, `JULIA_NUM_THREADS=auto` is set automatically.
 
 ## Project Structure
 
@@ -100,7 +128,8 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │   └── trossen_arm_mujoco/        # Trossen WXAI (git submodule)
 │
 ├── Project.toml                   # Julia project dependencies
-└── Manifest.toml                  # Locked dependency versions
+├── Manifest.toml                  # Locked dependency versions
+└── mise.toml                      # Mise configuration (tools, env, tasks)
 ```
 
 ## Supported Robots

@@ -42,6 +42,7 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 │
 ├── Project.toml                   # Julia dependencies
 ├── Manifest.toml                  # Locked dependency versions
+├── mise.toml                      # Mise configuration (tools, env, tasks)
 ├── .JuliaFormatter.toml           # Code formatter configuration
 └── README.md                      # User documentation
 ```
@@ -93,7 +94,30 @@ Before committing Julia code changes:
 
 ## Running the Project
 
-### Initial Setup
+This project uses [mise](https://mise.jdx.dev) for tool version management and task running.
+Mise automatically sets `JULIA_PROJECT=@.` and `JULIA_NUM_THREADS=auto`.
+
+### Using Mise (Recommended)
+
+```bash
+# Trust and install tools (Julia 1.12.4)
+mise trust && mise install
+
+# Install dependencies and MuJoCo visualizer
+mise run setup
+
+# Run simulations
+mise run so101              # SO101 with WebSocket control
+mise run trossen            # Trossen WXAI with WebSocket control
+mise run so101-basic        # SO101 basic demo
+mise run trossen-basic      # Trossen basic demo
+
+# Development
+mise run format             # Format all Julia code
+mise run client             # Run WebSocket test client
+```
+
+### Alternative (Without Mise)
 
 ```bash
 # Install Julia dependencies
@@ -103,7 +127,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using MuJoCo; install_visualiser()'
 ```
 
-### Running Simulations
+### Running Simulations (Without Mise)
 
 ```bash
 # SO101 with WebSocket control (requires multi-threading)
@@ -275,7 +299,7 @@ init_visualiser()
 
 ### WebSocket simulation hangs
 
-Ensure multi-threading is enabled:
+Ensure multi-threading is enabled. With mise, this is automatic. Without mise:
 ```bash
 julia --project=. -t 4 examples/so101/websocket_sim.jl
 ```

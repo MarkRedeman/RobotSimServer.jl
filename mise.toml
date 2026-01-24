@@ -1,0 +1,37 @@
+[tools]
+julia = "1.12.4"
+
+[env]
+JULIA_PROJECT = "@."
+JULIA_NUM_THREADS = "auto"
+
+[tasks.setup]
+description = "Install dependencies and MuJoCo visualizer"
+run = """
+julia -e 'using Pkg; Pkg.instantiate()'
+julia -e 'using MuJoCo; install_visualiser()'
+"""
+
+[tasks.so101]
+description = "Run SO101 robot with WebSocket control"
+run = "julia examples/so101/websocket_sim.jl"
+
+[tasks.trossen]
+description = "Run Trossen robot with WebSocket control"
+run = "julia examples/trossen/websocket_sim.jl"
+
+[tasks.so101-basic]
+description = "Run SO101 basic demo (no WebSocket)"
+run = "julia examples/so101/basic_sim.jl"
+
+[tasks.trossen-basic]
+description = "Run Trossen basic demo (no WebSocket)"
+run = "julia examples/trossen/basic_sim.jl"
+
+[tasks.format]
+description = "Format all Julia code"
+run = "julia -e 'using JuliaFormatter; format(\".\")'"
+
+[tasks.client]
+description = "Run WebSocket test client"
+run = "julia examples/clients/ws_client.jl"
