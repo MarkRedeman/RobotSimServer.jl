@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - uses: julia-actions/cache@v2
+
+      - name: Install JuliaFormatter
+        run: julia -e 'using Pkg; Pkg.add("JuliaFormatter")'
+
+      - name: Check formatting
+        run: |
+          julia -e '
+            using JuliaFormatter
+
+            # Check if formatting would change any files
+            # format() returns true if all files are already formatted
+            result = format(".", verbose=true, overwrite=false)
+
+            if result == false
+              @error """
+              Some files are not formatted correctly.
+
+              To fix, run locally:
+                julia -e "using Pkg; Pkg.add(\"JuliaFormatter\"); using JuliaFormatter; format(\".\")"
+
+              Or install JuliaFormatter globally and run:
+                julia -e "using JuliaFormatter; format(\".\")"
+              """
+              exit(1)
+            else
+              @info "All files are properly formatted!"
+            end
+          '
+
+  syntax:
+    name: Syntax Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - uses: julia-actions/cache@v2
+
+      - name: Install dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Validate Julia syntax
+        run: |
+          julia --project=. -e '
+            println("Validating Julia files...")
+            errors = String[]
+
+            # Parse all .jl files to check for syntax errors
+            for (root, dirs, files) in walkdir(".")
+              # Skip hidden directories, robots submodule, and archive
+              any(startswith.(root, ["./.git", "./robots", "./archive", "./output"])) && continue
+
+              for file in files
+                endswith(file, ".jl") || continue
+                path = joinpath(root, file)
+
+                try
+                  # Parse the file to check for syntax errors
+                  content = read(path, String)
+                  Meta.parse("begin\n" * content * "\nend")
+                  println("✓ $path")
+                catch e
+                  push!(errors, "$path: $(sprint(showerror, e))")
+                  println("✗ $path")
+                end
+              end
+            end
+
+            if !isempty(errors)
+              println("\n" * "="^60)
+              @error "Syntax errors found:" errors
+              exit(1)
+            else
+              println("\n✓ All files passed syntax validation!")
+            end
+          '

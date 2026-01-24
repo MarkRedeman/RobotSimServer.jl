@@ -1,0 +1,21 @@
+# JuliaFormatter configuration
+# See: https://domluna.github.io/JuliaFormatter.jl/stable/
+
+# Use SciML style - popular in scientific Julia computing
+# https://github.com/SciML/SciMLStyle
+style = "sciml"
+
+# Basic settings
+indent = 4
+margin = 92
+
+# SciML style enables these by default:
+# - always_for_in = true (use `for x in collection` not `for x = collection`)
+# - whitespace_ops_in_indices = true
+# - whitespace_typedefs = true
+# - remove_extra_newlines = true
+# - short_to_long_function_def = true
+# - trailing_comma = false
+
+# Ignore generated files and robot submodules
+ignore = ["robots/", "archive/", "output/"]

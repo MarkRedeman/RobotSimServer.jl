@@ -1,0 +1,6 @@
+[submodule "robots/SO-ARM100"]
+	path = robots/SO-ARM100
+	url = git@github.com:TheRobotStudio/SO-ARM100.git
+[submodule "robots/trossen_arm_mujoco"]
+	path = robots/trossen_arm_mujoco
+	url = git@github.com:TrossenRobotics/trossen_arm_mujoco.git
