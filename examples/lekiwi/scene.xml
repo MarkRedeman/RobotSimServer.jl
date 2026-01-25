@@ -116,7 +116,7 @@
         <joint axis="0 1 0" range="-2.79 2.79"/>
       </default>
       <default class="Jaw">
-        <joint axis="0 0 1" range="0. 0.6"/>
+        <joint axis="0 0 1" range="0.0208 1.693"/>
       </default>
       <default class="visual">
         <geom type="mesh" contype="0" conaffinity="0" density="0" group="2" material="white"/>
