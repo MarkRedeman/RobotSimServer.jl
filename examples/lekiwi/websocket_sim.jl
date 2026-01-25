@@ -193,7 +193,7 @@ end
 # Camera Configuration
 # ============================================================================
 # Multi-camera capture with WebSocket streaming
-# Uses built-in model cameras (front, wrist) plus an external orbit camera
+# Uses built-in model cameras (front, wrist) plus external side views
 capture_config = CaptureConfig(
     width = 640,
     height = 480,
@@ -213,16 +213,23 @@ capture_config = CaptureConfig(
             model_camera = "wrist",
             output = WebSocketOutput(port = 8083)
         ),
-        # Orbit camera: external rotating view
+        # Left side camera: external view from the left
         CameraSpec(
-            name = "orbit",
+            name = "side_left",
             lookat = [0.0, 0.0, 0.15],
-            distance = 1.2,
-            azimuth = 0.0,
-            elevation = -25.0,
-            orbiting = true,
-            orbit_speed = 20.0,
+            distance = 1.0,
+            azimuth = 90.0,
+            elevation = -20.0,
             output = WebSocketOutput(port = 8084)
+        ),
+        # Right side camera: external view from the right
+        CameraSpec(
+            name = "side_right",
+            lookat = [0.0, 0.0, 0.15],
+            distance = 1.0,
+            azimuth = -90.0,
+            elevation = -20.0,
+            output = WebSocketOutput(port = 8085)
         )
     ]
 )
@@ -240,7 +247,8 @@ println("\nWebSocket Endpoints:")
 println("  Control: ws://localhost:8081")
 println("  Front camera: ws://localhost:8082")
 println("  Wrist camera: ws://localhost:8083")
-println("  Orbit camera: ws://localhost:8084")
+println("  Left side camera: ws://localhost:8084")
+println("  Right side camera: ws://localhost:8085")
 println("\nJoint names (SO101-compatible):")
 println("  shoulder_pan, shoulder_lift, elbow_flex,")
 println("  wrist_flex, wrist_roll, gripper")
