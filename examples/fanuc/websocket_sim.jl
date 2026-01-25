@@ -6,8 +6,16 @@
 # - Interactive 3D visualization
 # - Support for 19 robot variants (5-12 DOF)
 #
-# COMPATIBILITY: Accepts SO101 joint names and maps them to Fanuc joints internally.
-# This allows using the same client code for SO101, Trossen, and Fanuc simulations.
+# IK-BASED CONTROL: Accepts SO101 joint commands and uses inverse kinematics to
+# map end-effector positions between robots. This provides natural motion mapping
+# despite different robot kinematics (joint axes, link lengths, etc.).
+#
+# The mapping works as follows:
+# 1. Apply SO101 joint angles to a "shadow" SO101 model
+# 2. Compute SO101 gripper position via forward kinematics
+# 3. Scale position from SO101 workspace to Fanuc workspace
+# 4. Solve inverse kinematics to get Fanuc joint angles
+# 5. Apply to Fanuc actuators
 #
 # Usage:
 #   julia --project=. -t 4 examples/fanuc/websocket_sim.jl [robot_name]
@@ -21,9 +29,7 @@
 #   julia --project=. examples/clients/ws_client.jl
 #
 # WebSocket API:
-#   Commands (Fanuc native):
-#     {"command": "set_joints_state", "joints": {"joint_1": 45.0, "joint_2": -30.0, ...}}
-#   Commands (SO101 compatible):
+#   Commands (SO101 format - mapped via IK):
 #     {"command": "set_joints_state", "joints": {"shoulder_pan": 45.0, "shoulder_lift": -30.0, ...}}
 #   All values in degrees.
 #
@@ -37,6 +43,7 @@ using MuJoCo.LibMuJoCo
 include("../../src/SceneBuilder.jl")
 include("../../src/WebSocketServer.jl")
 include("../../src/capture/Capture.jl")
+include("../../src/Kinematics.jl")
 
 # --- Robot Discovery ---
 function discover_robots()
@@ -138,34 +145,63 @@ end
 
 println("Joints: ", join(joint_names, ", "))
 
-# --- SO101 to Fanuc Joint Mapping ---
-# Maps SO101 joint names to Fanuc joint names for compatibility with SO101 clients.
-# Both robots are 6-DOF arms with similar kinematics:
-#   SO101 shoulder_pan  → Fanuc joint_1 (base rotation, Z-axis)
-#   SO101 shoulder_lift → Fanuc joint_2 (shoulder, Y-axis)
-#   SO101 elbow_flex    → Fanuc joint_3 (elbow, Y-axis)
-#   SO101 wrist_flex    → Fanuc joint_4 (wrist pitch)
-#   SO101 wrist_roll    → Fanuc joint_6 (wrist roll/flange, skipping joint_5)
-#   SO101 gripper       → ignored (Fanuc has no gripper in base config)
+# --- IK-Based Cross-Robot Control ---
+# Instead of direct joint mapping (which doesn't work well due to different kinematics),
+# we use inverse kinematics to map end-effector positions between robots:
 #
-# Note: Fanuc joint_5 is wrist pitch, joint_6 is wrist roll (flange).
-# SO101 wrist_roll maps to joint_6 for end-effector orientation control.
+# 1. Load SO101 as a "shadow" model for forward kinematics
+# 2. When SO101 joint commands arrive:
+#    a. Apply joints to SO101 shadow model
+#    b. Compute SO101 gripper position via FK
+#    c. Scale position from SO101 workspace to Fanuc workspace
+#    d. Solve IK to get Fanuc joint angles
+#    e. Apply to Fanuc actuators
+#
+# This provides natural motion mapping despite different robot kinematics.
 
-const SO101_TO_FANUC_MAP = Dict{String, String}(
-    "shoulder_pan" => "joint_1",
-    "shoulder_lift" => "joint_2",
-    "elbow_flex" => "joint_3",
-    "wrist_flex" => "joint_4",
-    "wrist_roll" => "joint_6"    # "gripper" is ignored - Fanuc has no gripper
+# Load SO101 shadow model for FK (just the robot, no scene objects)
+const SO101_XML = joinpath(@__DIR__, "..", "..", "robots", "SO-ARM100",
+    "Simulation", "SO101", "so101_new_calib.xml")
+println("Loading SO101 shadow model from: $SO101_XML")
+
+const so101_model = load_model(SO101_XML)
+const so101_data = init_data(so101_model)
+
+# SO101 joint name -> qpos index mapping
+const SO101_JOINTS = Dict{String, Int}(
+    "shoulder_pan" => 1,
+    "shoulder_lift" => 2,
+    "elbow_flex" => 3,
+    "wrist_flex" => 4,
+    "wrist_roll" => 5,
+    "gripper" => 6
 )
 
-# Reverse mapping for state reporting
+# Compute home positions for workspace scaling
+const SO101_HOME = get_home_position(so101_model, so101_data, "gripper")
+const FANUC_HOME = get_home_position(model, data, "link_6")
+const WORKSPACE_SCALE = norm(FANUC_HOME) / norm(SO101_HOME)
+
+println("SO101 home position: $SO101_HOME ($(round(norm(SO101_HOME), digits=3))m from origin)")
+println("Fanuc home position: $FANUC_HOME ($(round(norm(FANUC_HOME), digits=3))m from origin)")
+println("Workspace scale factor: $(round(WORKSPACE_SCALE, digits=2))x")
+
+# IK configuration - tuned for real-time control
+const IK_CONFIG = IKConfig(
+    max_iter = 50,      # Fewer iterations for real-time (30fps)
+    tol = 0.005,        # 5mm tolerance
+    step_size = 0.5,
+    damping = 0.01
+)
+
+# Fanuc joint name -> SO101 name for state reporting
 const FANUC_TO_SO101_MAP = Dict{String, String}(
     "joint_1" => "shoulder_pan",
     "joint_2" => "shoulder_lift",
     "joint_3" => "elbow_flex",
     "joint_4" => "wrist_flex",
-    "joint_6" => "wrist_roll"    # joint_5 has no SO101 equivalent, reported as-is
+    "joint_5" => "wrist_flex2",   # Extra DOF, reported with unique name
+    "joint_6" => "wrist_roll"
 )
 
 # --- WebSocket Server ---
@@ -189,26 +225,48 @@ function get_joint_state(model, data)
     return state
 end
 
-# Robot-specific: how to apply joint commands (degrees -> radians)
-# Accepts SO101 names, Fanuc joint names (joint_1), and actuator names (joint_1_actuator)
-function apply_joint_command!(data, actuator_map_unused, joints)
+# Robot-specific: how to apply joint commands using IK-based mapping
+# 1. Apply SO101 joints to shadow model
+# 2. Compute SO101 gripper position via FK
+# 3. Scale to Fanuc workspace
+# 4. Solve IK for Fanuc joint angles
+# 5. Apply to Fanuc actuators
+function apply_joint_command!(fanuc_data, actuator_map_unused, joints)
+    # Step 1: Apply joints to SO101 shadow model (degrees -> radians)
     for (name, val) in joints
         name_str = String(name)
-
-        # Skip gripper commands (Fanuc has no gripper)
-        if name_str == "gripper"
-            continue
+        if haskey(SO101_JOINTS, name_str)
+            idx = SO101_JOINTS[name_str]
+            so101_data.qpos[idx] = deg2rad(Float64(val))
         end
+    end
 
-        # Map SO101 name to Fanuc name if applicable
-        fanuc_name = get(SO101_TO_FANUC_MAP, name_str, name_str)
+    # Step 2: Compute SO101 gripper position via FK
+    so101_pos = forward_kinematics(so101_model, so101_data, "gripper")
 
-        if haskey(joint_to_actuator, fanuc_name)
-            idx = joint_to_actuator[fanuc_name]
-            data.ctrl[idx] = deg2rad(Float64(val))
-        else
-            @warn "Unknown joint: $name_str (available: $(join(keys(SO101_TO_FANUC_MAP), ", ")) or $(join(joint_names, ", ")))"
-        end
+    # Step 3: Scale position to Fanuc workspace
+    target_pos = scale_position(so101_pos, SO101_HOME, FANUC_HOME)
+
+    # Step 4: Solve IK for Fanuc joint angles
+    # Note: We work on a copy of qpos to avoid corrupting the Fanuc simulation state
+    # during IK iterations. After IK converges, we apply to ctrl.
+    ik_data = init_data(model)
+    ik_data.qpos .= fanuc_data.qpos  # Start from current position for continuity
+
+    result = inverse_kinematics!(model, ik_data, "link_6", target_pos; config = IK_CONFIG)
+
+    # Step 5: Apply computed joint angles to Fanuc actuators
+    # Use the first 6 joints (or however many the robot has)
+    num_joints = min(6, model.nu)
+    for i in 1:num_joints
+        fanuc_data.ctrl[i] = ik_data.qpos[i]
+    end
+
+    # Debug output (occasionally)
+    if rand() < 0.01  # ~1% of the time
+        @info "IK mapping" so101_pos=round.(so101_pos, digits = 3) target_pos=round.(
+            target_pos, digits = 3) converged=result.success error_mm=round(
+            result.final_error * 1000, digits = 1) iters=result.iterations
     end
 end
 
@@ -278,13 +336,13 @@ capture_config = CaptureConfig(
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("Starting Fanuc $robot simulation with WebSocket control...")
+println("Starting Fanuc $robot simulation with IK-based control...")
 println("WebSocket control:  ws://localhost:8081")
 println("Camera streams:     ws://localhost:8082 (front), 8083 (side), 8084 (orbit)")
 println()
-println("Accepts SO101 joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll")
-println("Native Fanuc joints: $(join(joint_names, ", "))")
-println("Note: 'gripper' commands are ignored (Fanuc has no gripper)")
+println("IK-Based Mapping: SO101 joint commands → FK → scale → IK → Fanuc joints")
+println("Accepts SO101 joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper")
+println("Workspace scaling: $(round(WORKSPACE_SCALE, digits=2))x (SO101 → Fanuc)")
 println()
 println("Press 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
