@@ -80,9 +80,25 @@ end
 xml_path = joinpath(@__DIR__, "..", "..", "robots", "fanuc_mujoco", robot, "scene.xml")
 println("Loading Fanuc $robot from: $xml_path")
 
-# Load model (no scene modifications needed - industrial robots don't have grippers in base config)
-model = load_model(xml_path)
-data = init_data(model)
+# Calculate cube placement based on robot size
+# Larger robots have longer reach, so cubes should be placed further out
+cube_scale = if occursin("m900", robot)
+    3.0  # Very large robot
+elseif occursin("m710", robot) || occursin("r2000", robot) || occursin("r1000", robot)
+    2.0  # Large robot
+elseif occursin("crx", robot) || occursin("lrmate", robot) || occursin("cr7", robot)
+    1.0  # Small/medium robot
+else
+    1.5  # Default industrial size
+end
+
+# Generate cubes in front of the robot, scaled to robot reach
+cubes = generate_cubes(50,
+    radius_min = 0.15 * cube_scale,
+    radius_max = 0.50 * cube_scale)
+
+# Build scene with cubes
+model, data = build_scene(xml_path, cubes)
 
 println("Loaded model with $(model.nq) DOF, $(model.nu) actuators")
 
