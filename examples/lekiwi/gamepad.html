@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xbox Controller Tester</title>
+    <title>LeKiwi Gamepad Controller</title>
     <style>
         * {
             box-sizing: border-box;
@@ -34,7 +34,7 @@
             background: #16213e;
             padding: 15px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -51,11 +51,22 @@
             height: 12px;
             border-radius: 50%;
             background: #f00;
+            flex-shrink: 0;
         }
 
         .status-dot.connected {
             background: #0f0;
             box-shadow: 0 0 10px #0f0;
+        }
+
+        .status-dot.connecting {
+            background: #ff0;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
         .controller-name {
@@ -78,6 +89,67 @@
             letter-spacing: 1px;
         }
 
+        /* Robot Commands Display */
+        .commands-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .command-group {
+            background: #0e1628;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .command-group h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .command-values {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .command-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: monospace;
+        }
+
+        .command-label {
+            color: #888;
+        }
+
+        .command-value {
+            color: #0f0;
+            font-weight: bold;
+        }
+
+        .command-value.active {
+            color: #ff0;
+        }
+
+        /* Speed boost indicator */
+        .boost-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .boost-indicator.active {
+            background: #ff0;
+            color: #000;
+        }
+
         /* Analog Sticks */
         .sticks-container {
             display: flex;
@@ -93,6 +165,12 @@
         .stick-label {
             margin-bottom: 10px;
             font-weight: bold;
+        }
+
+        .stick-sublabel {
+            font-size: 0.8em;
+            color: #666;
+            font-weight: normal;
         }
 
         .stick-visual {
@@ -211,24 +289,14 @@
             box-shadow: 0 0 15px #0f0;
         }
 
-        .button.analog {
-            position: relative;
-            overflow: hidden;
+        .button.special {
+            border-color: #ff0;
         }
 
-        .button.analog .fill {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: #0f0;
-            opacity: 0.5;
-            transition: height 0.05s ease-out;
-        }
-
-        .button.analog span {
-            position: relative;
-            z-index: 1;
+        .button.special.pressed {
+            background: #ff0;
+            border-color: #ff0;
+            box-shadow: 0 0 15px #ff0;
         }
 
         /* D-Pad */
@@ -265,48 +333,136 @@
         .instructions.highlight {
             color: #ff0;
         }
+
+        /* Control mapping legend */
+        .legend {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #333;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .legend-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+        }
+
+        .legend-key {
+            color: #888;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Xbox Controller Tester</h1>
+        <h1>LeKiwi Gamepad Controller</h1>
 
+        <!-- Gamepad Status -->
         <div class="status-bar">
             <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Disconnected</span>
+                <div class="status-dot" id="gamepadDot"></div>
+                <span id="gamepadStatus">Controller Disconnected</span>
             </div>
             <div class="controller-name" id="controllerName">No controller detected</div>
         </div>
 
+        <!-- WebSocket Status -->
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="wsDot"></div>
+                <span id="wsStatus">WebSocket Disconnected</span>
+            </div>
+            <div class="controller-name" id="wsUrl">ws://localhost:8081</div>
+        </div>
+
+        <!-- Robot Commands -->
+        <div class="section">
+            <h2>Robot Commands</h2>
+            <div class="commands-grid">
+                <div class="command-group">
+                    <h3>Base Velocity</h3>
+                    <div class="command-values">
+                        <div class="command-row">
+                            <span class="command-label">vx (fwd/back)</span>
+                            <span class="command-value" id="cmdVx">0.000</span>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-label">vy (strafe)</span>
+                            <span class="command-value" id="cmdVy">0.000</span>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-label">omega (turn)</span>
+                            <span class="command-value" id="cmdOmega">0.000</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="command-group">
+                    <h3>Arm Control</h3>
+                    <div class="command-values">
+                        <div class="command-row">
+                            <span class="command-label">shoulder_pan</span>
+                            <span class="command-value" id="cmdShoulderPan">0.0°</span>
+                        </div>
+                        <div class="command-row">
+                            <span class="command-label">Speed Boost</span>
+                            <span class="boost-indicator" id="boostIndicator">LB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="legend">
+                <div class="legend-row">
+                    <span class="legend-key">Left Stick</span>
+                    <span>Forward/Back (Y) + Strafe (X)</span>
+                </div>
+                <div class="legend-row">
+                    <span class="legend-key">Right Stick</span>
+                    <span>Turn (Y) + Shoulder Pan (X)</span>
+                </div>
+                <div class="legend-row">
+                    <span class="legend-key">LB Button</span>
+                    <span>2x Speed Boost</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analog Sticks -->
         <div class="section">
             <h2>Analog Sticks</h2>
             <div class="sticks-container">
                 <div class="stick-wrapper">
-                    <div class="stick-label">Left Stick</div>
+                    <div class="stick-label">
+                        Left Stick
+                        <div class="stick-sublabel">Base Movement</div>
+                    </div>
                     <div class="stick-visual">
                         <div class="stick-crosshair"></div>
                         <div class="stick-dot" id="leftStickDot"></div>
                     </div>
                     <div class="stick-values">
-                        X: <span id="leftStickX">0.00</span> &nbsp;
-                        Y: <span id="leftStickY">0.00</span>
+                        X: <span id="leftStickX">+0.00</span> &nbsp;
+                        Y: <span id="leftStickY">+0.00</span>
                     </div>
                 </div>
                 <div class="stick-wrapper">
-                    <div class="stick-label">Right Stick</div>
+                    <div class="stick-label">
+                        Right Stick
+                        <div class="stick-sublabel">Turn + Arm</div>
+                    </div>
                     <div class="stick-visual">
                         <div class="stick-crosshair"></div>
                         <div class="stick-dot" id="rightStickDot"></div>
                     </div>
                     <div class="stick-values">
-                        X: <span id="rightStickX">0.00</span> &nbsp;
-                        Y: <span id="rightStickY">0.00</span>
+                        X: <span id="rightStickX">+0.00</span> &nbsp;
+                        Y: <span id="rightStickY">+0.00</span>
                     </div>
                 </div>
             </div>
         </div>
 
+        <!-- Triggers -->
         <div class="section">
             <h2>Triggers</h2>
             <div class="triggers-container">
@@ -331,6 +487,7 @@
             </div>
         </div>
 
+        <!-- Buttons -->
         <div class="section">
             <h2>Buttons</h2>
             <div class="buttons-grid" id="buttonsGrid">
@@ -357,7 +514,42 @@
     </div>
 
     <script>
+        // =============================================================================
+        // Configuration
+        // =============================================================================
+        const WS_URL = 'ws://localhost:8081';
+        const SEND_RATE_MS = 33;  // ~30Hz
+
+        // Velocity limits (matching BaseController.jl defaults)
+        const MAX_VX = 0.15;      // m/s forward/back
+        const MAX_VY = 0.10;      // m/s strafe
+        const MAX_OMEGA = 0.8;    // rad/s rotation
+        const SPEED_BOOST = 2.0;  // LB multiplier
+
+        // Arm limits
+        const SHOULDER_PAN_MAX = 110;  // degrees
+
+        // =============================================================================
+        // State
+        // =============================================================================
+        let gamepadIndex = null;
+        let animationId = null;
+        let ws = null;
+        let wsConnected = false;
+        let lastSendTime = 0;
+
+        // Current command values
+        let currentCommands = {
+            vx: 0,
+            vy: 0,
+            omega: 0,
+            shoulderPan: 0,
+            boostActive: false
+        };
+
+        // =============================================================================
         // Standard Xbox controller button mapping
+        // =============================================================================
         const BUTTON_LABELS = {
             0: 'A',
             1: 'B',
@@ -365,30 +557,31 @@
             3: 'Y',
             4: 'LB',
             5: 'RB',
-            6: 'LT',      // Also available as axis
-            7: 'RT',      // Also available as axis
+            6: 'LT',
+            7: 'RT',
             8: 'Back',
             9: 'Start',
-            10: 'LS',     // Left stick press
-            11: 'RS',     // Right stick press
-            12: 'Up',     // D-pad
+            10: 'LS',
+            11: 'RS',
+            12: 'Up',
             13: 'Down',
             14: 'Left',
             15: 'Right',
-            16: 'Xbox'    // Guide button (may not work in all browsers)
+            16: 'Xbox'
         };
 
-        // Buttons to show in the main grid (excluding D-pad which has its own display)
+        // Buttons to show in the main grid (excluding D-pad)
         const GRID_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 16];
-        const DPAD_BUTTONS = [12, 13, 14, 15];
+        const SPECIAL_BUTTONS = [4]; // LB highlighted as special (speed boost)
 
-        let gamepadIndex = null;
-        let animationId = null;
-
-        // DOM elements
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
+        // =============================================================================
+        // DOM Elements
+        // =============================================================================
+        const gamepadDot = document.getElementById('gamepadDot');
+        const gamepadStatus = document.getElementById('gamepadStatus');
         const controllerName = document.getElementById('controllerName');
+        const wsDot = document.getElementById('wsDot');
+        const wsStatus = document.getElementById('wsStatus');
         const instructions = document.getElementById('instructions');
         const buttonsGrid = document.getElementById('buttonsGrid');
 
@@ -404,35 +597,110 @@
         const ltFill = document.getElementById('ltFill');
         const rtFill = document.getElementById('rtFill');
 
-        // Initialize button grid
-        function initButtons() {
-            buttonsGrid.innerHTML = '';
-            GRID_BUTTONS.forEach(index => {
-                const btn = document.createElement('div');
-                btn.className = 'button';
-                btn.id = `btn${index}`;
-                btn.textContent = BUTTON_LABELS[index] || `B${index}`;
-                buttonsGrid.appendChild(btn);
-            });
+        const cmdVx = document.getElementById('cmdVx');
+        const cmdVy = document.getElementById('cmdVy');
+        const cmdOmega = document.getElementById('cmdOmega');
+        const cmdShoulderPan = document.getElementById('cmdShoulderPan');
+        const boostIndicator = document.getElementById('boostIndicator');
+
+        // =============================================================================
+        // WebSocket Connection
+        // =============================================================================
+        function connectWebSocket() {
+            if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+                return;
+            }
+
+            console.log('Connecting to WebSocket:', WS_URL);
+            wsDot.classList.remove('connected');
+            wsDot.classList.add('connecting');
+            wsStatus.textContent = 'Connecting...';
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                wsConnected = true;
+                wsDot.classList.remove('connecting');
+                wsDot.classList.add('connected');
+                wsStatus.textContent = 'Connected';
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                wsConnected = false;
+                wsDot.classList.remove('connected', 'connecting');
+                wsStatus.textContent = 'Disconnected - Reconnecting...';
+
+                // Auto-reconnect after 2 seconds
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onmessage = (event) => {
+                // Handle incoming messages if needed (state updates, etc.)
+                try {
+                    const data = JSON.parse(event.data);
+                    // Could update UI with robot state here
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            };
         }
 
-        // Format number to 2 decimal places with sign
+        function sendCommands() {
+            if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const now = performance.now();
+            if (now - lastSendTime < SEND_RATE_MS) {
+                return;
+            }
+            lastSendTime = now;
+
+            // Send base velocity command
+            const baseCmd = {
+                command: 'set_base_velocity',
+                vx: currentCommands.vx,
+                vy: currentCommands.vy,
+                omega: currentCommands.omega
+            };
+            ws.send(JSON.stringify(baseCmd));
+
+            // Send arm command
+            const armCmd = {
+                command: 'set_joints_state',
+                joints: {
+                    shoulder_pan: currentCommands.shoulderPan
+                }
+            };
+            ws.send(JSON.stringify(armCmd));
+        }
+
+        // =============================================================================
+        // Utility Functions
+        // =============================================================================
         function formatValue(val) {
             const sign = val >= 0 ? '+' : '';
             return sign + val.toFixed(2);
         }
 
-        // Apply deadzone to axis value
+        function formatVelocity(val) {
+            const sign = val >= 0 ? '+' : '';
+            return sign + val.toFixed(3);
+        }
+
         function applyDeadzone(value, deadzone = 0.1) {
             if (Math.abs(value) < deadzone) return 0;
-            // Scale remaining range to 0-1
             const sign = value > 0 ? 1 : -1;
             return sign * (Math.abs(value) - deadzone) / (1 - deadzone);
         }
 
-        // Update stick visual position
         function updateStickVisual(dot, x, y) {
-            // Convert -1 to 1 range to pixel offset (max 65px from center for 150px container)
             const maxOffset = 55;
             const offsetX = x * maxOffset;
             const offsetY = y * maxOffset;
@@ -440,8 +708,7 @@
             dot.style.top = `calc(50% + ${offsetY}px)`;
         }
 
-        // Update button visual
-        function updateButton(index, pressed, value = 0) {
+        function updateButton(index, pressed) {
             const btn = document.getElementById(`btn${index}`);
             if (!btn) return;
 
@@ -452,25 +719,65 @@
             }
         }
 
-        // Main update loop
+        function updateCommandDisplay() {
+            // Update velocity displays
+            cmdVx.textContent = formatVelocity(currentCommands.vx);
+            cmdVy.textContent = formatVelocity(currentCommands.vy);
+            cmdOmega.textContent = formatVelocity(currentCommands.omega);
+            cmdShoulderPan.textContent = currentCommands.shoulderPan.toFixed(1) + '°';
+
+            // Highlight active values
+            cmdVx.classList.toggle('active', Math.abs(currentCommands.vx) > 0.001);
+            cmdVy.classList.toggle('active', Math.abs(currentCommands.vy) > 0.001);
+            cmdOmega.classList.toggle('active', Math.abs(currentCommands.omega) > 0.001);
+            cmdShoulderPan.classList.toggle('active', Math.abs(currentCommands.shoulderPan) > 0.1);
+
+            // Update boost indicator
+            boostIndicator.classList.toggle('active', currentCommands.boostActive);
+        }
+
+        // =============================================================================
+        // Initialize Buttons
+        // =============================================================================
+        function initButtons() {
+            buttonsGrid.innerHTML = '';
+            GRID_BUTTONS.forEach(index => {
+                const btn = document.createElement('div');
+                btn.className = 'button';
+                if (SPECIAL_BUTTONS.includes(index)) {
+                    btn.classList.add('special');
+                }
+                btn.id = `btn${index}`;
+                btn.textContent = BUTTON_LABELS[index] || `B${index}`;
+                buttonsGrid.appendChild(btn);
+            });
+        }
+
+        // =============================================================================
+        // Main Update Loop
+        // =============================================================================
         function updateGamepad() {
-            if (gamepadIndex === null) return;
+            if (gamepadIndex === null) {
+                animationId = requestAnimationFrame(updateGamepad);
+                return;
+            }
 
             const gamepads = navigator.getGamepads();
             const gp = gamepads[gamepadIndex];
 
             if (!gp) {
-                handleDisconnect();
+                handleGamepadDisconnect();
+                animationId = requestAnimationFrame(updateGamepad);
                 return;
             }
 
-            // Update axes (sticks)
-            // Standard mapping: axes[0,1] = left stick, axes[2,3] = right stick
+            // Read axes with deadzone
             const lx = applyDeadzone(gp.axes[0] || 0);
             const ly = applyDeadzone(gp.axes[1] || 0);
             const rx = applyDeadzone(gp.axes[2] || 0);
             const ry = applyDeadzone(gp.axes[3] || 0);
 
+            // Update stick displays
             leftStickX.textContent = formatValue(lx);
             leftStickY.textContent = formatValue(ly);
             rightStickX.textContent = formatValue(rx);
@@ -479,7 +786,7 @@
             updateStickVisual(leftStickDot, lx, ly);
             updateStickVisual(rightStickDot, rx, ry);
 
-            // Update triggers (buttons 6 and 7 have analog values)
+            // Update triggers
             const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
             const rt = gp.buttons[7] ? gp.buttons[7].value : 0;
 
@@ -488,47 +795,61 @@
             ltFill.style.width = `${lt * 100}%`;
             rtFill.style.width = `${rt * 100}%`;
 
-            // Update all buttons
+            // Update buttons
             gp.buttons.forEach((button, index) => {
-                updateButton(index, button.pressed, button.value);
+                updateButton(index, button.pressed);
             });
+
+            // Check LB for speed boost (button 4)
+            const boostActive = gp.buttons[4] ? gp.buttons[4].pressed : false;
+            const speedMultiplier = boostActive ? SPEED_BOOST : 1.0;
+
+            // Calculate robot commands
+            // Left stick Y -> vx (inverted: stick up = -1, but forward = +vx)
+            // Left stick X -> vy (stick right = +1 = strafe right = -vy? Let's keep it natural: right = +vy)
+            // Right stick Y -> omega (inverted: stick up = -1, but turn left = +omega)
+            // Right stick X -> shoulder_pan (stick right = +1 = pan right = +degrees)
+
+            currentCommands.vx = -ly * MAX_VX * speedMultiplier;
+            currentCommands.vy = -lx * MAX_VY * speedMultiplier;  // Inverted for natural feel
+            currentCommands.omega = -ry * MAX_OMEGA * speedMultiplier;
+            currentCommands.shoulderPan = rx * SHOULDER_PAN_MAX;
+            currentCommands.boostActive = boostActive;
+
+            // Update command display
+            updateCommandDisplay();
+
+            // Send commands via WebSocket
+            sendCommands();
 
             // Continue loop
             animationId = requestAnimationFrame(updateGamepad);
         }
 
-        // Handle gamepad connection
-        function handleConnect(event) {
+        // =============================================================================
+        // Gamepad Connection Handlers
+        // =============================================================================
+        function handleGamepadConnect(event) {
             const gp = event.gamepad;
             console.log('Gamepad connected:', gp.id);
 
             gamepadIndex = gp.index;
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
+            gamepadDot.classList.add('connected');
+            gamepadStatus.textContent = 'Connected';
             controllerName.textContent = gp.id;
-            instructions.textContent = 'Controller connected! Try the sticks and buttons.';
+            instructions.textContent = 'Controller connected! Use sticks to control the robot.';
             instructions.classList.remove('highlight');
-
-            // Start update loop
-            if (animationId) cancelAnimationFrame(animationId);
-            animationId = requestAnimationFrame(updateGamepad);
         }
 
-        // Handle gamepad disconnection
-        function handleDisconnect(event) {
+        function handleGamepadDisconnect(event) {
             console.log('Gamepad disconnected');
 
             gamepadIndex = null;
-            statusDot.classList.remove('connected');
-            statusText.textContent = 'Disconnected';
+            gamepadDot.classList.remove('connected');
+            gamepadStatus.textContent = 'Disconnected';
             controllerName.textContent = 'No controller detected';
             instructions.textContent = 'Press any button on your Xbox controller to connect';
             instructions.classList.add('highlight');
-
-            if (animationId) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-            }
 
             // Reset visuals
             updateStickVisual(leftStickDot, 0, 0);
@@ -542,34 +863,45 @@
             ltFill.style.width = '0%';
             rtFill.style.width = '0%';
 
-            // Reset all buttons
+            // Reset buttons
             document.querySelectorAll('.button').forEach(btn => {
                 btn.classList.remove('pressed');
             });
+
+            // Reset commands
+            currentCommands = { vx: 0, vy: 0, omega: 0, shoulderPan: 0, boostActive: false };
+            updateCommandDisplay();
         }
 
-        // Check for already-connected gamepads (some browsers require this)
         function checkExistingGamepads() {
             const gamepads = navigator.getGamepads();
             for (let i = 0; i < gamepads.length; i++) {
                 if (gamepads[i]) {
-                    handleConnect({ gamepad: gamepads[i] });
+                    handleGamepadConnect({ gamepad: gamepads[i] });
                     break;
                 }
             }
         }
 
+        // =============================================================================
         // Initialize
+        // =============================================================================
         initButtons();
 
-        // Listen for gamepad events
-        window.addEventListener('gamepadconnected', handleConnect);
-        window.addEventListener('gamepaddisconnected', handleDisconnect);
+        // Connect WebSocket
+        connectWebSocket();
 
-        // Check for existing gamepads on load
+        // Listen for gamepad events
+        window.addEventListener('gamepadconnected', handleGamepadConnect);
+        window.addEventListener('gamepaddisconnected', handleGamepadDisconnect);
+
+        // Check for existing gamepads
         checkExistingGamepads();
 
-        // Some browsers need polling to detect initial connection
+        // Start update loop
+        animationId = requestAnimationFrame(updateGamepad);
+
+        // Poll for gamepads (some browsers need this)
         if (!gamepadIndex) {
             const pollInterval = setInterval(() => {
                 checkExistingGamepads();
@@ -578,7 +910,6 @@
                 }
             }, 500);
 
-            // Stop polling after 30 seconds
             setTimeout(() => clearInterval(pollInterval), 30000);
         }
     </script>
