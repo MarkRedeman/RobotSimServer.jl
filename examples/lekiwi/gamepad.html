@@ -398,12 +398,8 @@
                     </div>
                 </div>
                 <div class="command-group">
-                    <h3>Arm Control</h3>
+                    <h3>Modifiers</h3>
                     <div class="command-values">
-                        <div class="command-row">
-                            <span class="command-label">shoulder_pan</span>
-                            <span class="command-value" id="cmdShoulderPan">0.0°</span>
-                        </div>
                         <div class="command-row">
                             <span class="command-label">Speed Boost</span>
                             <span class="boost-indicator" id="boostIndicator">LB</span>
@@ -418,7 +414,7 @@
                 </div>
                 <div class="legend-row">
                     <span class="legend-key">Right Stick</span>
-                    <span>Turn (Y) + Shoulder Pan (X)</span>
+                    <span>Turn (X axis)</span>
                 </div>
                 <div class="legend-row">
                     <span class="legend-key">LB Button</span>
@@ -448,7 +444,7 @@
                 <div class="stick-wrapper">
                     <div class="stick-label">
                         Right Stick
-                        <div class="stick-sublabel">Turn + Arm</div>
+                        <div class="stick-sublabel">Turn</div>
                     </div>
                     <div class="stick-visual">
                         <div class="stick-crosshair"></div>
@@ -526,8 +522,7 @@
         const MAX_OMEGA = 0.8;    // rad/s rotation
         const SPEED_BOOST = 2.0;  // LB multiplier
 
-        // Arm limits
-        const SHOULDER_PAN_MAX = 110;  // degrees
+
 
         // =============================================================================
         // State
@@ -543,7 +538,6 @@
             vx: 0,
             vy: 0,
             omega: 0,
-            shoulderPan: 0,
             boostActive: false
         };
 
@@ -600,7 +594,6 @@
         const cmdVx = document.getElementById('cmdVx');
         const cmdVy = document.getElementById('cmdVy');
         const cmdOmega = document.getElementById('cmdOmega');
-        const cmdShoulderPan = document.getElementById('cmdShoulderPan');
         const boostIndicator = document.getElementById('boostIndicator');
 
         // =============================================================================
@@ -670,15 +663,6 @@
                 omega: currentCommands.omega
             };
             ws.send(JSON.stringify(baseCmd));
-
-            // Send arm command
-            const armCmd = {
-                command: 'set_joints_state',
-                joints: {
-                    shoulder_pan: currentCommands.shoulderPan
-                }
-            };
-            ws.send(JSON.stringify(armCmd));
         }
 
         // =============================================================================
@@ -724,13 +708,11 @@
             cmdVx.textContent = formatVelocity(currentCommands.vx);
             cmdVy.textContent = formatVelocity(currentCommands.vy);
             cmdOmega.textContent = formatVelocity(currentCommands.omega);
-            cmdShoulderPan.textContent = currentCommands.shoulderPan.toFixed(1) + '°';
 
             // Highlight active values
             cmdVx.classList.toggle('active', Math.abs(currentCommands.vx) > 0.001);
             cmdVy.classList.toggle('active', Math.abs(currentCommands.vy) > 0.001);
             cmdOmega.classList.toggle('active', Math.abs(currentCommands.omega) > 0.001);
-            cmdShoulderPan.classList.toggle('active', Math.abs(currentCommands.shoulderPan) > 0.1);
 
             // Update boost indicator
             boostIndicator.classList.toggle('active', currentCommands.boostActive);
@@ -805,15 +787,13 @@
             const speedMultiplier = boostActive ? SPEED_BOOST : 1.0;
 
             // Calculate robot commands
-            // Left stick Y -> vx (inverted: stick up = -1, but forward = +vx)
-            // Left stick X -> vy (stick right = +1 = strafe right = -vy? Let's keep it natural: right = +vy)
-            // Right stick Y -> omega (inverted: stick up = -1, but turn left = +omega)
-            // Right stick X -> shoulder_pan (stick right = +1 = pan right = +degrees)
+            // Left stick Y -> vx (stick up = -1, forward = +vx, so invert)
+            // Left stick X -> vy (stick right = +1, strafe right = -vy, so invert)
+            // Right stick X -> omega (stick right = +1, turn right = -omega, so invert)
 
-            currentCommands.vx = -ly * MAX_VX * speedMultiplier;
-            currentCommands.vy = -lx * MAX_VY * speedMultiplier;  // Inverted for natural feel
-            currentCommands.omega = -ry * MAX_OMEGA * speedMultiplier;
-            currentCommands.shoulderPan = rx * SHOULDER_PAN_MAX;
+            currentCommands.vx = ly * MAX_VX * speedMultiplier;
+            currentCommands.vy = -lx * MAX_VY * speedMultiplier;
+            currentCommands.omega = rx * MAX_OMEGA * speedMultiplier;
             currentCommands.boostActive = boostActive;
 
             // Update command display
@@ -869,7 +849,7 @@
             });
 
             // Reset commands
-            currentCommands = { vx: 0, vy: 0, omega: 0, shoulderPan: 0, boostActive: false };
+            currentCommands = { vx: 0, vy: 0, omega: 0, boostActive: false };
             updateCommandDisplay();
         }
 
