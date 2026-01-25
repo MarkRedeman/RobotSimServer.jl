@@ -2,7 +2,8 @@
 #
 # This script runs a MuJoCo simulation of the LeKiwi mobile manipulator with:
 # - WebSocket server for external arm control (port 8081)
-# - Autonomous mobile base driving in circles
+# - Keyboard control for mobile base (WASD + QE for strafing, Shift for speed boost)
+# - WebSocket base velocity commands (set_base_velocity)
 # - Multi-camera capture (WebSocket streams)
 # - Built-in front and wrist cameras
 # - Graspable cubes in the environment
@@ -13,6 +14,12 @@
 #
 # These are mapped internally to LeKiwi's native names:
 #   Rotation, Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Jaw
+#
+# Keyboard Controls (mobile base):
+#   W/S - Forward/backward
+#   A/D - Rotate left/right
+#   Q/E - Strafe left/right
+#   Shift - Double speed
 #
 # Usage:
 #   julia --project=. -t 4 examples/lekiwi/websocket_sim.jl
@@ -26,6 +33,7 @@ using MuJoCo.LibMuJoCo
 # Load shared modules
 include("../../src/SceneBuilder.jl")
 include("../../src/WebSocketServer.jl")
+include("../../src/BaseController.jl")
 include("../../src/capture/Capture.jl")
 
 # ============================================================================
@@ -129,6 +137,17 @@ end
 # ============================================================================
 server = WebSocketControlServer(port = 8081, fps = 30.0)
 
+# ============================================================================
+# Base Velocity Controller
+# ============================================================================
+# Handles keyboard and WebSocket input for mobile base control
+base_ctrl = BaseVelocityController(
+    max_vx = 0.15,      # Max forward/back speed (m/s)
+    max_vy = 0.10,      # Max strafe speed (m/s)
+    max_omega = 0.8,    # Max angular velocity (rad/s)
+    timeout = 0.5       # Seconds before velocities reset to 0
+)
+
 # Get arm joint state (in degrees) using SO101-compatible names
 function get_joint_state(model, data)
     state = Dict{String, Float64}()
@@ -165,6 +184,18 @@ function apply_joint_command!(data, actuator_map, joints)
     end
 end
 
+# Handle base velocity commands from WebSocket
+function handle_base_velocity_command!(raw::Dict)
+    if get(raw, "command", "") == "set_base_velocity"
+        vx = Float64(get(raw, "vx", 0.0))
+        vy = Float64(get(raw, "vy", 0.0))
+        omega = Float64(get(raw, "omega", 0.0))
+        update_from_websocket!(base_ctrl, vx, vy, omega)
+        return true
+    end
+    return false
+end
+
 # Start WebSocket server
 start_server!(server, get_joint_state)
 
@@ -172,21 +203,46 @@ start_server!(server, get_joint_state)
 # Controller Function
 # ============================================================================
 function ctrl!(m, d)
-    t = d.time
-
-    # === Autonomous Mobile Base: Drive in circles ===
-    vx = 0.05           # Forward velocity (m/s)
-    vy = 0.0            # Strafe velocity (m/s)
-    omega = 0.3         # Angular velocity (rad/s) - turning left
+    # === Mobile Base: Get velocities from controller (keyboard or WebSocket) ===
+    vx, vy, omega = get_velocities(base_ctrl)
 
     wheel_vels = body_to_wheel_velocities(vx, vy, omega)
     d.ctrl[1] = wheel_vels[1]  # left wheel
     d.ctrl[2] = wheel_vels[2]  # right wheel
     d.ctrl[3] = wheel_vels[3]  # back wheel
 
-    # === WebSocket Arm Control ===
-    process_commands!(server, d, actuator_map, apply_joint_command!)
+    # === WebSocket Control ===
+    # Process commands from queue, handling base velocity commands specially
+    @lock server.lock begin
+        while !isempty(server.command_queue)
+            raw = popfirst!(server.command_queue)
+
+            # Check for base velocity command first
+            if handle_base_velocity_command!(raw)
+                continue
+            end
+
+            # Otherwise handle as arm joint command
+            cmd = get(raw, "command", "")
+            if cmd == "set_joints_state"
+                joints = get(raw, "joints", Dict())
+                if !isempty(joints)
+                    apply_joint_command!(d, actuator_map, joints)
+                    server.is_controlled = true
+                end
+            end
+        end
+    end
+
     maybe_broadcast!(server, m, d, get_joint_state)
+end
+
+# ============================================================================
+# Keyboard Handler
+# ============================================================================
+# Called from UI loop after GLFW.PollEvents() to poll WASD keys
+function keyboard_handler(window, GLFW)
+    update_from_keyboard!(base_ctrl, window, GLFW)
 end
 
 # ============================================================================
@@ -249,16 +305,23 @@ println("  Front camera: ws://localhost:8082")
 println("  Wrist camera: ws://localhost:8083")
 println("  Left side camera: ws://localhost:8084")
 println("  Right side camera: ws://localhost:8085")
-println("\nJoint names (SO101-compatible):")
-println("  shoulder_pan, shoulder_lift, elbow_flex,")
-println("  wrist_flex, wrist_roll, gripper")
-println("\nMobile base: Autonomous circular motion")
+println("\nArm Control (via WebSocket):")
+println("  Joint names: shoulder_pan, shoulder_lift, elbow_flex,")
+println("               wrist_flex, wrist_roll, gripper")
+println("\nBase Control (keyboard):")
+println("  W/S - Forward/backward")
+println("  A/D - Rotate left/right")
+println("  Q/E - Strafe left/right")
+println("  Shift - Double speed")
+println("\nBase Control (WebSocket):")
+println("  {\"command\": \"set_base_velocity\", \"vx\": 0.1, \"vy\": 0.0, \"omega\": 0.3}")
 println("="^60)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,
     controller = ctrl!,
-    capture = capture_config
+    capture = capture_config,
+    keyboard_handler = keyboard_handler
 )
 
 println("Simulation ended.")
