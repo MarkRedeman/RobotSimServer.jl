@@ -318,7 +318,8 @@ println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n
 run_with_capture!(model, data,
     controller = ctrl!,
     capture = capture_config,
-    keyboard_handler = keyboard_handler
+    keyboard_handler = keyboard_handler,
+    disabled_keys = Set(['W', 'A', 'S', 'D', 'Q', 'E'])
 )
 
 println("Simulation ended.")
