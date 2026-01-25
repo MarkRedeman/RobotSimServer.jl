@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox Controller Tester</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #0f0;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .status-bar {
+            background: #16213e;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f00;
+        }
+
+        .status-dot.connected {
+            background: #0f0;
+            box-shadow: 0 0 10px #0f0;
+        }
+
+        .controller-name {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .section {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Analog Sticks */
+        .sticks-container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .stick-wrapper {
+            text-align: center;
+        }
+
+        .stick-label {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .stick-visual {
+            width: 150px;
+            height: 150px;
+            background: #0e1628;
+            border: 2px solid #333;
+            border-radius: 50%;
+            position: relative;
+            margin: 0 auto;
+        }
+
+        .stick-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            transform: translate(-50%, -50%);
+        }
+
+        .stick-crosshair::before,
+        .stick-crosshair::after {
+            content: '';
+            position: absolute;
+            background: #333;
+        }
+
+        .stick-crosshair::before {
+            width: 1px;
+            height: 100%;
+            left: 50%;
+        }
+
+        .stick-crosshair::after {
+            width: 100%;
+            height: 1px;
+            top: 50%;
+        }
+
+        .stick-dot {
+            width: 20px;
+            height: 20px;
+            background: #0f0;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #0f0;
+            transition: all 0.05s ease-out;
+        }
+
+        .stick-values {
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        /* Triggers */
+        .triggers-container {
+            display: flex;
+            justify-content: space-around;
+            gap: 40px;
+        }
+
+        .trigger-wrapper {
+            flex: 1;
+            max-width: 200px;
+        }
+
+        .trigger-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .trigger-bar {
+            height: 20px;
+            background: #0e1628;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .trigger-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0f0, #ff0);
+            width: 0%;
+            transition: width 0.05s ease-out;
+        }
+
+        /* Buttons */
+        .buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 10px;
+        }
+
+        .button {
+            background: #0e1628;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: all 0.1s ease;
+        }
+
+        .button.pressed {
+            background: #0f0;
+            color: #000;
+            border-color: #0f0;
+            box-shadow: 0 0 15px #0f0;
+        }
+
+        .button.analog {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .button.analog .fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #0f0;
+            opacity: 0.5;
+            transition: height 0.05s ease-out;
+        }
+
+        .button.analog span {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* D-Pad */
+        .dpad-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 40px);
+            grid-template-rows: repeat(3, 40px);
+            gap: 2px;
+        }
+
+        .dpad .button {
+            padding: 8px;
+        }
+
+        .dpad .empty {
+            background: transparent;
+            border: none;
+        }
+
+        /* Instructions */
+        .instructions {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+
+        .instructions.highlight {
+            color: #ff0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Xbox Controller Tester</h1>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+            <div class="controller-name" id="controllerName">No controller detected</div>
+        </div>
+
+        <div class="section">
+            <h2>Analog Sticks</h2>
+            <div class="sticks-container">
+                <div class="stick-wrapper">
+                    <div class="stick-label">Left Stick</div>
+                    <div class="stick-visual">
+                        <div class="stick-crosshair"></div>
+                        <div class="stick-dot" id="leftStickDot"></div>
+                    </div>
+                    <div class="stick-values">
+                        X: <span id="leftStickX">0.00</span> &nbsp;
+                        Y: <span id="leftStickY">0.00</span>
+                    </div>
+                </div>
+                <div class="stick-wrapper">
+                    <div class="stick-label">Right Stick</div>
+                    <div class="stick-visual">
+                        <div class="stick-crosshair"></div>
+                        <div class="stick-dot" id="rightStickDot"></div>
+                    </div>
+                    <div class="stick-values">
+                        X: <span id="rightStickX">0.00</span> &nbsp;
+                        Y: <span id="rightStickY">0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Triggers</h2>
+            <div class="triggers-container">
+                <div class="trigger-wrapper">
+                    <div class="trigger-label">
+                        <span>LT</span>
+                        <span id="ltValue">0.00</span>
+                    </div>
+                    <div class="trigger-bar">
+                        <div class="trigger-fill" id="ltFill"></div>
+                    </div>
+                </div>
+                <div class="trigger-wrapper">
+                    <div class="trigger-label">
+                        <span>RT</span>
+                        <span id="rtValue">0.00</span>
+                    </div>
+                    <div class="trigger-bar">
+                        <div class="trigger-fill" id="rtFill"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Buttons</h2>
+            <div class="buttons-grid" id="buttonsGrid">
+                <!-- Buttons will be generated by JavaScript -->
+            </div>
+            <div class="dpad-container">
+                <div class="dpad">
+                    <div class="empty"></div>
+                    <div class="button" id="btn12">Up</div>
+                    <div class="empty"></div>
+                    <div class="button" id="btn14">Left</div>
+                    <div class="empty"></div>
+                    <div class="button" id="btn15">Right</div>
+                    <div class="empty"></div>
+                    <div class="button" id="btn13">Down</div>
+                    <div class="empty"></div>
+                </div>
+            </div>
+        </div>
+
+        <p class="instructions" id="instructions">
+            Press any button on your Xbox controller to connect
+        </p>
+    </div>
+
+    <script>
+        // Standard Xbox controller button mapping
+        const BUTTON_LABELS = {
+            0: 'A',
+            1: 'B',
+            2: 'X',
+            3: 'Y',
+            4: 'LB',
+            5: 'RB',
+            6: 'LT',      // Also available as axis
+            7: 'RT',      // Also available as axis
+            8: 'Back',
+            9: 'Start',
+            10: 'LS',     // Left stick press
+            11: 'RS',     // Right stick press
+            12: 'Up',     // D-pad
+            13: 'Down',
+            14: 'Left',
+            15: 'Right',
+            16: 'Xbox'    // Guide button (may not work in all browsers)
+        };
+
+        // Buttons to show in the main grid (excluding D-pad which has its own display)
+        const GRID_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 16];
+        const DPAD_BUTTONS = [12, 13, 14, 15];
+
+        let gamepadIndex = null;
+        let animationId = null;
+
+        // DOM elements
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const controllerName = document.getElementById('controllerName');
+        const instructions = document.getElementById('instructions');
+        const buttonsGrid = document.getElementById('buttonsGrid');
+
+        const leftStickDot = document.getElementById('leftStickDot');
+        const rightStickDot = document.getElementById('rightStickDot');
+        const leftStickX = document.getElementById('leftStickX');
+        const leftStickY = document.getElementById('leftStickY');
+        const rightStickX = document.getElementById('rightStickX');
+        const rightStickY = document.getElementById('rightStickY');
+
+        const ltValue = document.getElementById('ltValue');
+        const rtValue = document.getElementById('rtValue');
+        const ltFill = document.getElementById('ltFill');
+        const rtFill = document.getElementById('rtFill');
+
+        // Initialize button grid
+        function initButtons() {
+            buttonsGrid.innerHTML = '';
+            GRID_BUTTONS.forEach(index => {
+                const btn = document.createElement('div');
+                btn.className = 'button';
+                btn.id = `btn${index}`;
+                btn.textContent = BUTTON_LABELS[index] || `B${index}`;
+                buttonsGrid.appendChild(btn);
+            });
+        }
+
+        // Format number to 2 decimal places with sign
+        function formatValue(val) {
+            const sign = val >= 0 ? '+' : '';
+            return sign + val.toFixed(2);
+        }
+
+        // Apply deadzone to axis value
+        function applyDeadzone(value, deadzone = 0.1) {
+            if (Math.abs(value) < deadzone) return 0;
+            // Scale remaining range to 0-1
+            const sign = value > 0 ? 1 : -1;
+            return sign * (Math.abs(value) - deadzone) / (1 - deadzone);
+        }
+
+        // Update stick visual position
+        function updateStickVisual(dot, x, y) {
+            // Convert -1 to 1 range to pixel offset (max 65px from center for 150px container)
+            const maxOffset = 55;
+            const offsetX = x * maxOffset;
+            const offsetY = y * maxOffset;
+            dot.style.left = `calc(50% + ${offsetX}px)`;
+            dot.style.top = `calc(50% + ${offsetY}px)`;
+        }
+
+        // Update button visual
+        function updateButton(index, pressed, value = 0) {
+            const btn = document.getElementById(`btn${index}`);
+            if (!btn) return;
+
+            if (pressed) {
+                btn.classList.add('pressed');
+            } else {
+                btn.classList.remove('pressed');
+            }
+        }
+
+        // Main update loop
+        function updateGamepad() {
+            if (gamepadIndex === null) return;
+
+            const gamepads = navigator.getGamepads();
+            const gp = gamepads[gamepadIndex];
+
+            if (!gp) {
+                handleDisconnect();
+                return;
+            }
+
+            // Update axes (sticks)
+            // Standard mapping: axes[0,1] = left stick, axes[2,3] = right stick
+            const lx = applyDeadzone(gp.axes[0] || 0);
+            const ly = applyDeadzone(gp.axes[1] || 0);
+            const rx = applyDeadzone(gp.axes[2] || 0);
+            const ry = applyDeadzone(gp.axes[3] || 0);
+
+            leftStickX.textContent = formatValue(lx);
+            leftStickY.textContent = formatValue(ly);
+            rightStickX.textContent = formatValue(rx);
+            rightStickY.textContent = formatValue(ry);
+
+            updateStickVisual(leftStickDot, lx, ly);
+            updateStickVisual(rightStickDot, rx, ry);
+
+            // Update triggers (buttons 6 and 7 have analog values)
+            const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
+            const rt = gp.buttons[7] ? gp.buttons[7].value : 0;
+
+            ltValue.textContent = lt.toFixed(2);
+            rtValue.textContent = rt.toFixed(2);
+            ltFill.style.width = `${lt * 100}%`;
+            rtFill.style.width = `${rt * 100}%`;
+
+            // Update all buttons
+            gp.buttons.forEach((button, index) => {
+                updateButton(index, button.pressed, button.value);
+            });
+
+            // Continue loop
+            animationId = requestAnimationFrame(updateGamepad);
+        }
+
+        // Handle gamepad connection
+        function handleConnect(event) {
+            const gp = event.gamepad;
+            console.log('Gamepad connected:', gp.id);
+
+            gamepadIndex = gp.index;
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+            controllerName.textContent = gp.id;
+            instructions.textContent = 'Controller connected! Try the sticks and buttons.';
+            instructions.classList.remove('highlight');
+
+            // Start update loop
+            if (animationId) cancelAnimationFrame(animationId);
+            animationId = requestAnimationFrame(updateGamepad);
+        }
+
+        // Handle gamepad disconnection
+        function handleDisconnect(event) {
+            console.log('Gamepad disconnected');
+
+            gamepadIndex = null;
+            statusDot.classList.remove('connected');
+            statusText.textContent = 'Disconnected';
+            controllerName.textContent = 'No controller detected';
+            instructions.textContent = 'Press any button on your Xbox controller to connect';
+            instructions.classList.add('highlight');
+
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+
+            // Reset visuals
+            updateStickVisual(leftStickDot, 0, 0);
+            updateStickVisual(rightStickDot, 0, 0);
+            leftStickX.textContent = '+0.00';
+            leftStickY.textContent = '+0.00';
+            rightStickX.textContent = '+0.00';
+            rightStickY.textContent = '+0.00';
+            ltValue.textContent = '0.00';
+            rtValue.textContent = '0.00';
+            ltFill.style.width = '0%';
+            rtFill.style.width = '0%';
+
+            // Reset all buttons
+            document.querySelectorAll('.button').forEach(btn => {
+                btn.classList.remove('pressed');
+            });
+        }
+
+        // Check for already-connected gamepads (some browsers require this)
+        function checkExistingGamepads() {
+            const gamepads = navigator.getGamepads();
+            for (let i = 0; i < gamepads.length; i++) {
+                if (gamepads[i]) {
+                    handleConnect({ gamepad: gamepads[i] });
+                    break;
+                }
+            }
+        }
+
+        // Initialize
+        initButtons();
+
+        // Listen for gamepad events
+        window.addEventListener('gamepadconnected', handleConnect);
+        window.addEventListener('gamepaddisconnected', handleDisconnect);
+
+        // Check for existing gamepads on load
+        checkExistingGamepads();
+
+        // Some browsers need polling to detect initial connection
+        if (!gamepadIndex) {
+            const pollInterval = setInterval(() => {
+                checkExistingGamepads();
+                if (gamepadIndex !== null) {
+                    clearInterval(pollInterval);
+                }
+            }, 500);
+
+            // Stop polling after 30 seconds
+            setTimeout(() => clearInterval(pollInterval), 30000);
+        }
+    </script>
+</body>
+</html>
