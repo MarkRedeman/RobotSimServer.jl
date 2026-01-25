@@ -38,7 +38,7 @@ run = "julia examples/fanuc/basic_sim.jl"
 
 [tasks.fanuc-convert]
 description = "Convert Fanuc URDF to MuJoCo XML (default variants)"
-run = "python3 scripts/convert_fanuc_industrial.py"
+run = "julia scripts/convert_fanuc_industrial.jl"
 
 [tasks.format]
 description = "Format all Julia code"
