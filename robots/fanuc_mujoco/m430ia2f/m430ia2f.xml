@@ -70,6 +70,15 @@
     </body>
   </worldbody>
 
+  <contact>
+    <!-- Exclude collisions between adjacent links (parent-child pairs) -->
+    <exclude body1="base_link" body2="link_1"/>
+    <exclude body1="link_1" body2="link_2"/>
+    <exclude body1="link_2" body2="link_3"/>
+    <exclude body1="link_3" body2="link_4"/>
+    <exclude body1="link_4" body2="link_5"/>
+  </contact>
+
   <actuator>
     <position name="joint_1_actuator" joint="joint_1" class="m430ia2f"/>
     <position name="joint_2_actuator" joint="joint_2" class="m430ia2f"/>

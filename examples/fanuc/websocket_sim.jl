@@ -98,9 +98,12 @@ else
 end
 
 # Generate cubes in front of the robot, scaled to robot reach
+# Fanuc robots are much larger than SO101, so use bigger cubes
 cubes = generate_cubes(50,
     radius_min = 0.15 * cube_scale,
-    radius_max = 0.50 * cube_scale)
+    radius_max = 0.50 * cube_scale,
+    size = 0.03 * cube_scale,      # Bigger cubes for industrial robots
+    z = 0.04 * cube_scale)          # Higher off the ground
 
 # Build scene with cubes
 model, data = build_scene(xml_path, cubes)

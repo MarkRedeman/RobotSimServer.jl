@@ -554,6 +554,20 @@ def generate_mujoco_xml(
         [
             "  </worldbody>",
             "",
+            "  <contact>",
+            "    <!-- Exclude collisions between adjacent links (parent-child pairs) -->",
+        ]
+    )
+
+    # Add contact exclusions for adjacent body pairs
+    # This prevents self-collision between parent and child links
+    for j in joints:
+        xml_lines.append(f'    <exclude body1="{j.parent}" body2="{j.child}"/>')
+
+    xml_lines.extend(
+        [
+            "  </contact>",
+            "",
             "  <actuator>",
         ]
     )

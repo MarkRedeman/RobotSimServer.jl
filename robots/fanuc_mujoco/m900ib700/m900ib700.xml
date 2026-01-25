@@ -128,6 +128,22 @@
     </body>
   </worldbody>
 
+  <contact>
+    <!-- Exclude collisions between adjacent links (parent-child pairs) -->
+    <exclude body1="base_link" body2="link_1"/>
+    <exclude body1="link_1" body2="link_2"/>
+    <exclude body1="link_2" body2="link_3"/>
+    <exclude body1="link_3" body2="link_4"/>
+    <exclude body1="link_4" body2="link_5"/>
+    <exclude body1="link_5" body2="link_6"/>
+    <exclude body1="link_2" body2="plink_1"/>
+    <exclude body1="link_3" body2="plink_2"/>
+    <exclude body1="link_2" body2="balancer_left"/>
+    <exclude body1="link_1" body2="piston_left"/>
+    <exclude body1="link_2" body2="balancer_right"/>
+    <exclude body1="link_1" body2="piston_right"/>
+  </contact>
+
   <actuator>
     <position name="balancer_left_joint_actuator" joint="balancer_left_joint" class="m900ib700"/>
     <position name="balancer_right_joint_actuator" joint="balancer_right_joint" class="m900ib700"/>
