@@ -27,6 +27,7 @@ export interface Commands {
 export interface GamepadState {
   leftStick: { x: number; y: number };
   rightStick: { x: number; y: number };
+  dpad: { up: boolean; down: boolean; left: boolean; right: boolean };
   lt: number; // 0-1
   rt: number; // 0-1
   buttons: boolean[]; // 17 buttons
@@ -195,6 +196,22 @@ export function useRobotControl(): RobotControlState {
           const rx = applyDeadzone(gp.axes[2] || 0);
           const ry = applyDeadzone(gp.axes[3] || 0);
 
+          // Read D-pad buttons (12=Up, 13=Down, 14=Left, 15=Right)
+          const dpadUp = gp.buttons[12]?.pressed ? 1 : 0;
+          const dpadDown = gp.buttons[13]?.pressed ? 1 : 0;
+          const dpadLeft = gp.buttons[14]?.pressed ? 1 : 0;
+          const dpadRight = gp.buttons[15]?.pressed ? 1 : 0;
+
+          // Combine D-pad with left stick (D-pad acts like digital stick input)
+          // D-pad Y: Up = -1 (forward), Down = +1 (backward) - same as stick
+          // D-pad X: Left = -1, Right = +1 - same as stick
+          const dpadY = dpadDown - dpadUp; // -1, 0, or +1
+          const dpadX = dpadRight - dpadLeft; // -1, 0, or +1
+
+          // Use whichever has larger magnitude (stick or D-pad)
+          const effectiveLx = Math.abs(lx) > Math.abs(dpadX) ? lx : dpadX;
+          const effectiveLy = Math.abs(ly) > Math.abs(dpadY) ? ly : dpadY;
+
           // Read triggers
           const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
           const rt = gp.buttons[7] ? gp.buttons[7].value : 0;
@@ -207,12 +224,12 @@ export function useRobotControl(): RobotControlState {
           const boostMultiplier = 1.0 + lt * lt * boostRange;
 
           // Calculate robot commands
-          // Left stick Y -> vx (stick up = -1, forward = +vx, so use ly directly after deadzone)
-          // Left stick X -> vy (stick right = +1, strafe right = -vy, so invert)
+          // Left stick/D-pad Y -> vx (up = -1, forward = +vx, so use ly directly after deadzone)
+          // Left stick/D-pad X -> vy (right = +1, strafe right = -vy, so invert)
           // Right stick X -> omega (stick right = +1, turn right = +omega)
           const commands: Commands = {
-            vx: ly * MAX_VX * boostMultiplier,
-            vy: -lx * MAX_VY * boostMultiplier,
+            vx: effectiveLy * MAX_VX * boostMultiplier,
+            vy: -effectiveLx * MAX_VY * boostMultiplier,
             omega: rx * MAX_OMEGA * boostMultiplier,
             boostMultiplier,
           };
@@ -224,6 +241,12 @@ export function useRobotControl(): RobotControlState {
             const gamepadState: GamepadState = {
               leftStick: { x: lx, y: ly },
               rightStick: { x: rx, y: ry },
+              dpad: {
+                up: dpadUp === 1,
+                down: dpadDown === 1,
+                left: dpadLeft === 1,
+                right: dpadRight === 1,
+              },
               lt,
               rt,
               buttons,
