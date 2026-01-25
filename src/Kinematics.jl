@@ -157,15 +157,18 @@ function get_body_jacobian(model, data, body_name::String)
         error("Body not found: $body_name")
     end
 
-    # Allocate Jacobian matrices (3 x nv)
+    # Allocate Jacobian matrices (3 x nv) using mj_zeros for row-major layout
+    # MuJoCo expects row-major arrays; mj_zeros returns a Transpose wrapper
+    # that stores data in the correct order for MuJoCo while appearing column-major to Julia
     nv = model.nv
-    jacp = zeros(3, nv)
-    jacr = zeros(3, nv)
+    jacp = mj_zeros(3, nv)
+    jacr = mj_zeros(3, nv)
 
     # Compute Jacobians at body origin
     mj_jacBody(model, data, jacp, jacr, body_id)
 
-    return jacp, jacr
+    # Convert to regular Matrix for easier manipulation
+    return Matrix(jacp), Matrix(jacr)
 end
 
 """
@@ -309,16 +312,19 @@ function inverse_kinematics!(model, data, body_name::String, target_pos::Vector{
             return IKResult(true, iter, error_norm, current_pos)
         end
 
-        # Compute Jacobian
-        jacp = zeros(3, nv)
-        jacr = zeros(3, nv)
+        # Compute Jacobian using mj_zeros for correct row-major layout
+        jacp = mj_zeros(3, nv)
+        jacr = mj_zeros(3, nv)
         mj_jacBody(model, data, jacp, jacr, body_id)
+
+        # Convert to Matrix for linear algebra operations
+        J = Matrix(jacp)
 
         # Damped Least Squares: Δq = Jᵀ(JJᵀ + λI)⁻¹ error
         # This is more stable than pseudoinverse near singularities
-        JJT = jacp * jacp'
+        JJT = J * J'
         damped_inv = (JJT + config.damping * I_mat) \ error_vec
-        delta_q = jacp' * damped_inv
+        delta_q = J' * damped_inv
 
         # Update joint positions with step size
         data.qpos[1:nv] .+= config.step_size * delta_q
