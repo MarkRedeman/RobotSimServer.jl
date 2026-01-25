@@ -645,6 +645,7 @@ with radius biased toward the middle of the range for better reachability.
 - `radius_min`: Minimum distance from origin (default 0.10m for SO101)
 - `radius_max`: Maximum distance from origin (default 0.38m for SO101)
 - `z`: Height of cube centers (default 0.025m, on table surface)
+- `size`: Half-extent of cubes in meters (default 0.015 = 3cm cube)
 
 # Returns
 - Vector of CubeSpec with random positions and vibrant colors
@@ -656,10 +657,13 @@ cubes = generate_cubes(50, radius_min=0.10, radius_max=0.38)
 
 # Trossen robot (longer reach)
 cubes = generate_cubes(50, radius_min=0.12, radius_max=0.55)
+
+# Fanuc industrial robot (much larger)
+cubes = generate_cubes(50, radius_min=0.25, radius_max=0.75, size=0.04, z=0.05)
 ```
 """
 function generate_cubes(n::Int; radius_min::Float64 = 0.10, radius_max::Float64 = 0.38,
-        z::Float64 = 0.025)
+        z::Float64 = 0.025, size::Float64 = 0.015)
     cubes = CubeSpec[]
     for i in 1:n
         # Distribute cubes in a semicircle in FRONT of the robot
@@ -676,11 +680,13 @@ function generate_cubes(n::Int; radius_min::Float64 = 0.10, radius_max::Float64 
         # Random color (keep it vibrant)
         color = [0.3 + 0.7 * rand(), 0.3 + 0.7 * rand(), 0.3 + 0.7 * rand(), 1.0]
 
-        push!(cubes, CubeSpec(
-            name = "cube_$i",
-            pos = [x, y, z],
-            color = color
-        ))
+        push!(
+            cubes, CubeSpec(
+                name = "cube_$i",
+                pos = [x, y, z],
+                size = size,
+                color = color
+            ))
     end
     return cubes
 end

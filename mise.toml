@@ -28,6 +28,18 @@ run = "julia examples/so101/basic_sim.jl"
 description = "Run Trossen basic demo (no WebSocket)"
 run = "julia examples/trossen/basic_sim.jl"
 
+[tasks.fanuc]
+description = "Run Fanuc robot with WebSocket control (default: m10ia)"
+run = "julia examples/fanuc/websocket_sim.jl"
+
+[tasks.fanuc-basic]
+description = "Run Fanuc robot basic demo (no WebSocket)"
+run = "julia examples/fanuc/basic_sim.jl"
+
+[tasks.fanuc-convert]
+description = "Convert Fanuc URDF to MuJoCo XML (default variants)"
+run = "julia scripts/convert_fanuc_industrial.jl"
+
 [tasks.format]
 description = "Format all Julia code"
 run = "julia -e 'using JuliaFormatter; format(\".\")'"

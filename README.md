@@ -22,7 +22,7 @@ This repository provides example MuJoCo simulations that can be controlled via W
 
 ## Features
 
-- **Multi-robot support**: SO101 and Trossen WXAI robot arms
+- **Multi-robot support**: SO101, Trossen WXAI, and 19 Fanuc industrial robot families (33 variants)
 - **WebSocket control interface**: JSON-based protocol on port 8081
 - **ZMQ control interface**: Alternative REQ/REP protocol on port 5555
 - **Multi-camera capture system**:
@@ -118,6 +118,8 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │   ├── trossen/                   # Trossen WXAI examples
 │   │   ├── basic_sim.jl           # Simple sine wave demo
 │   │   └── websocket_sim.jl       # Full WebSocket + cameras
+│   ├── fanuc/                     # Fanuc industrial robot examples
+│   │   └── basic_sim.jl           # Multi-robot demo (19+ robots)
 │   └── clients/                   # Test client examples
 │       ├── ws_client.jl           # Julia WebSocket client
 │       ├── zmq_client.jl          # Julia ZMQ client
@@ -125,7 +127,12 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │
 ├── robots/                        # Robot model submodules
 │   ├── SO-ARM100/                 # SO101 robot (git submodule)
-│   └── trossen_arm_mujoco/        # Trossen WXAI (git submodule)
+│   ├── trossen_arm_mujoco/        # Trossen WXAI (git submodule)
+│   ├── fanuc-industrial/          # ROS-Industrial Fanuc (git submodule)
+│   └── fanuc_mujoco/              # Generated MuJoCo XMLs for Fanuc
+│
+├── scripts/                       # Utility scripts
+│   └── convert_fanuc_industrial.py  # URDF to MuJoCo converter
 │
 ├── Project.toml                   # Julia project dependencies
 ├── Manifest.toml                  # Locked dependency versions
@@ -147,6 +154,34 @@ A 6-DOF research robot arm with:
 - **Joints**: joint_0 through joint_5, left_gripper
 - **SO101 Compatibility**: Accepts SO101 joint names, maps internally
 - **Gripper**: Slide joint (0 to 0.044 meters)
+
+### Fanuc Industrial Robots
+
+19 industrial robot families from the [ROS-Industrial fanuc](https://github.com/ros-industrial/fanuc) repository:
+
+| Family | Default Variant | Joints | Description |
+|--------|-----------------|--------|-------------|
+| CR-7iA | cr7ia | 6 | Collaborative robot |
+| CR-35iA | cr35ia | 6 | Heavy payload collaborative |
+| CRX-10iA/L | crx10ial | 6 | Lightweight collaborative |
+| LRMate 200i | lrmate200i | 6 | Compact industrial |
+| LRMate 200iB | lrmate200ib | 6 | Compact industrial |
+| LRMate 200iC | lrmate200ic | 6 | Compact industrial |
+| LRMate 200iD | lrmate200id | 6 | Compact industrial |
+| M-6iB | m6ib | 6 | Small industrial |
+| M-10iA | m10ia | 6 | Medium industrial |
+| M-16iB | m16ib20 | 6 | Medium industrial |
+| M-20iA | m20ia | 6 | Medium industrial |
+| M-20iB | m20ib25 | 6 | Medium industrial |
+| M-430iA | m430ia2f | 5 | Delta/SCARA style |
+| M-710iC | m710ic50 | 6 | Large industrial |
+| M-900iA | m900ia260l | 8 | Heavy payload |
+| M-900iB | m900ib700 | 12 | Extra heavy payload |
+| R-1000iA | r1000ia80f | 6 | High-speed spot welding |
+| R-2000iB | r2000ib210f | 6 | Heavy payload |
+| R-2000iC | r2000ic165f | 6 | Heavy payload |
+
+Additional variants available (33 total). Run `python3 scripts/convert_fanuc_industrial.py --list` to see all.
 
 ## Running Examples
 
@@ -174,6 +209,24 @@ julia --project=. examples/trossen/basic_sim.jl
 
 # WebSocket control with multi-camera capture
 julia --project=. -t 4 examples/trossen/websocket_sim.jl
+```
+
+### Fanuc Examples
+
+```bash
+# Run with default robot (M-10iA - classic yellow industrial arm)
+julia --project=. examples/fanuc/basic_sim.jl
+
+# Run with specific robot
+julia --project=. examples/fanuc/basic_sim.jl crx10ial
+julia --project=. examples/fanuc/basic_sim.jl r2000ic165f
+julia --project=. examples/fanuc/basic_sim.jl m900ib700
+
+# Using mise
+mise run fanuc
+
+# Generate additional variants
+python3 scripts/convert_fanuc_industrial.py m10ia7l crx10ial
 ```
 
 ### Client Examples

@@ -4,3 +4,6 @@
 [submodule "robots/trossen_arm_mujoco"]
 	path = robots/trossen_arm_mujoco
 	url = git@github.com:TrossenRobotics/trossen_arm_mujoco.git
+[submodule "robots/fanuc-industrial"]
+	path = robots/fanuc-industrial
+	url = git@github.com:ros-industrial/fanuc.git

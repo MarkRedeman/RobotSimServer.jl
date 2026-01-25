@@ -1,0 +1,99 @@
+<?xml version="1.0" ?>
+<!-- MuJoCo model for FANUC M20IA -->
+<!-- Auto-generated from fanuc-industrial/fanuc_m20ia_support -->
+<mujoco model="m20ia">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <default class="m20ia">
+      <joint damping="100" frictionloss="10" armature="1"/>
+      <position kp="1000" kv="100"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh name="base_link_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/base_link.stl"/>
+    <mesh name="base_link_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/base_link.stl"/>
+    <mesh name="link_1_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_1.stl"/>
+    <mesh name="link_1_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_1.stl"/>
+    <mesh name="link_2_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_2.stl"/>
+    <mesh name="link_2_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_2.stl"/>
+    <mesh name="link_3_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_3.stl"/>
+    <mesh name="link_3_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_3.stl"/>
+    <mesh name="link_4_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_4.stl"/>
+    <mesh name="link_4_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_4.stl"/>
+    <mesh name="link_5_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_5.stl"/>
+    <mesh name="link_5_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_5.stl"/>
+    <mesh name="link_6_visual" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/visual/link_6.stl"/>
+    <mesh name="link_6_collision" file="../../fanuc-industrial/fanuc_m20ia_support/meshes/m20ia/collision/link_6.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="base_link" childclass="m20ia">
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+      <geom class="visual" mesh="base_link_visual" rgba="0.278 0.278 0.278 1.000"/>
+      <geom class="collision" mesh="base_link_collision"/>
+      <body name="link_1" pos="0 0 0.525" childclass="m20ia">
+        <joint name="joint_1" type="hinge" axis="0 0 1" range="-2.9671 2.9671"/>
+        <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+        <geom class="visual" mesh="link_1_visual" rgba="0.960 0.760 0.130 1.000"/>
+        <geom class="collision" mesh="link_1_collision"/>
+        <body name="link_2" pos="0.150 0 0" childclass="m20ia">
+          <joint name="joint_2" type="hinge" axis="0 1 0" range="-1.7453 2.7925"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="link_2_visual" rgba="0.960 0.760 0.130 1.000"/>
+          <geom class="collision" mesh="link_2_collision"/>
+          <body name="link_3" pos="0 0 0.790" childclass="m20ia">
+            <joint name="joint_3" type="hinge" axis="0 -1 0" range="-3.2289 4.7668"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="link_3_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="link_3_collision"/>
+            <body name="link_4" pos="0 0 0.250" childclass="m20ia">
+              <joint name="joint_4" type="hinge" axis="-1 0 0" range="-3.4907 3.4907"/>
+              <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+              <geom class="visual" mesh="link_4_visual" rgba="0.960 0.760 0.130 1.000"/>
+              <geom class="collision" mesh="link_4_collision"/>
+              <body name="link_5" pos="0.835 0 0" childclass="m20ia">
+                <joint name="joint_5" type="hinge" axis="0 -1 0" range="-2.4435 2.4435"/>
+                <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                <geom class="visual" mesh="link_5_visual" rgba="0.960 0.760 0.130 1.000"/>
+                <geom class="collision" mesh="link_5_collision"/>
+                <body name="link_6" pos="0.100 0 0" childclass="m20ia">
+                  <joint name="joint_6" type="hinge" axis="-1 0 0" range="-4.7124 4.7124"/>
+                  <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                  <geom class="visual" mesh="link_6_visual" rgba="0.150 0.150 0.150 1.000"/>
+                  <geom class="collision" mesh="link_6_collision"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <contact>
+    <!-- Exclude collisions between adjacent links (parent-child pairs) -->
+    <exclude body1="base_link" body2="link_1"/>
+    <exclude body1="link_1" body2="link_2"/>
+    <exclude body1="link_2" body2="link_3"/>
+    <exclude body1="link_3" body2="link_4"/>
+    <exclude body1="link_4" body2="link_5"/>
+    <exclude body1="link_5" body2="link_6"/>
+  </contact>
+
+  <actuator>
+    <position name="joint_1_actuator" joint="joint_1" class="m20ia"/>
+    <position name="joint_2_actuator" joint="joint_2" class="m20ia"/>
+    <position name="joint_3_actuator" joint="joint_3" class="m20ia"/>
+    <position name="joint_4_actuator" joint="joint_4" class="m20ia"/>
+    <position name="joint_5_actuator" joint="joint_5" class="m20ia"/>
+    <position name="joint_6_actuator" joint="joint_6" class="m20ia"/>
+  </actuator>
+</mujoco>
