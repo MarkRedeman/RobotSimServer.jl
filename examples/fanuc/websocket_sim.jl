@@ -6,6 +6,9 @@
 # - Interactive 3D visualization
 # - Support for 19 robot variants (5-12 DOF)
 #
+# COMPATIBILITY: Accepts SO101 joint names and maps them to Fanuc joints internally.
+# This allows using the same client code for SO101, Trossen, and Fanuc simulations.
+#
 # Usage:
 #   julia --project=. -t 4 examples/fanuc/websocket_sim.jl [robot_name]
 #
@@ -18,12 +21,14 @@
 #   julia --project=. examples/clients/ws_client.jl
 #
 # WebSocket API:
-#   Commands:
+#   Commands (Fanuc native):
 #     {"command": "set_joints_state", "joints": {"joint_1": 45.0, "joint_2": -30.0, ...}}
-#     All values in degrees.
+#   Commands (SO101 compatible):
+#     {"command": "set_joints_state", "joints": {"shoulder_pan": 45.0, "shoulder_lift": -30.0, ...}}
+#   All values in degrees.
 #
 #   Events:
-#     {"event": "state_was_updated", "timestamp": ..., "state": {"joint_1": 45.0, ...}}
+#     {"event": "state_was_updated", "timestamp": ..., "state": {"shoulder_pan": 45.0, ...}}
 
 using MuJoCo
 using MuJoCo.LibMuJoCo
@@ -130,33 +135,76 @@ end
 
 println("Joints: ", join(joint_names, ", "))
 
+# --- SO101 to Fanuc Joint Mapping ---
+# Maps SO101 joint names to Fanuc joint names for compatibility with SO101 clients.
+# Both robots are 6-DOF arms with similar kinematics:
+#   SO101 shoulder_pan  → Fanuc joint_1 (base rotation, Z-axis)
+#   SO101 shoulder_lift → Fanuc joint_2 (shoulder, Y-axis)
+#   SO101 elbow_flex    → Fanuc joint_3 (elbow, Y-axis)
+#   SO101 wrist_flex    → Fanuc joint_4 (wrist pitch)
+#   SO101 wrist_roll    → Fanuc joint_6 (wrist roll/flange, skipping joint_5)
+#   SO101 gripper       → ignored (Fanuc has no gripper in base config)
+#
+# Note: Fanuc joint_5 is wrist pitch, joint_6 is wrist roll (flange).
+# SO101 wrist_roll maps to joint_6 for end-effector orientation control.
+
+const SO101_TO_FANUC_MAP = Dict{String, String}(
+    "shoulder_pan" => "joint_1",
+    "shoulder_lift" => "joint_2",
+    "elbow_flex" => "joint_3",
+    "wrist_flex" => "joint_4",
+    "wrist_roll" => "joint_6"    # "gripper" is ignored - Fanuc has no gripper
+)
+
+# Reverse mapping for state reporting
+const FANUC_TO_SO101_MAP = Dict{String, String}(
+    "joint_1" => "shoulder_pan",
+    "joint_2" => "shoulder_lift",
+    "joint_3" => "elbow_flex",
+    "joint_4" => "wrist_flex",
+    "joint_6" => "wrist_roll"    # joint_5 has no SO101 equivalent, reported as-is
+)
+
 # --- WebSocket Server ---
 server = WebSocketControlServer(port = 8081, fps = 30.0)
 
 # Robot-specific: how to get joint state (in degrees)
-# Reports using joint names (joint_1, joint_2, etc.) not actuator names
+# Reports using SO101 joint names for compatibility, plus any unmapped Fanuc joints
 function get_joint_state(model, data)
     state = Dict{String, Float64}()
     for name in joint_names
         joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
         if joint_id >= 0
             addr = model.jnt_qposadr[joint_id + 1] + 1
-            state[name] = rad2deg(data.qpos[addr])
+            val_deg = rad2deg(data.qpos[addr])
+
+            # Use SO101 name if available, otherwise use Fanuc name
+            report_name = get(FANUC_TO_SO101_MAP, name, name)
+            state[report_name] = val_deg
         end
     end
     return state
 end
 
 # Robot-specific: how to apply joint commands (degrees -> radians)
-# Accepts both joint names (joint_1) and actuator names (joint_1_actuator)
+# Accepts SO101 names, Fanuc joint names (joint_1), and actuator names (joint_1_actuator)
 function apply_joint_command!(data, actuator_map_unused, joints)
     for (name, val) in joints
         name_str = String(name)
-        if haskey(joint_to_actuator, name_str)
-            idx = joint_to_actuator[name_str]
+
+        # Skip gripper commands (Fanuc has no gripper)
+        if name_str == "gripper"
+            continue
+        end
+
+        # Map SO101 name to Fanuc name if applicable
+        fanuc_name = get(SO101_TO_FANUC_MAP, name_str, name_str)
+
+        if haskey(joint_to_actuator, fanuc_name)
+            idx = joint_to_actuator[fanuc_name]
             data.ctrl[idx] = deg2rad(Float64(val))
         else
-            @warn "Unknown joint: $name_str (available: $(join(joint_names, ", ")))"
+            @warn "Unknown joint: $name_str (available: $(join(keys(SO101_TO_FANUC_MAP), ", ")) or $(join(joint_names, ", ")))"
         end
     end
 end
@@ -231,7 +279,9 @@ println("Starting Fanuc $robot simulation with WebSocket control...")
 println("WebSocket control:  ws://localhost:8081")
 println("Camera streams:     ws://localhost:8082 (front), 8083 (side), 8084 (orbit)")
 println()
-println("Joint names: $(join(joint_names, ", "))")
+println("Accepts SO101 joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll")
+println("Native Fanuc joints: $(join(joint_names, ", "))")
+println("Note: 'gripper' commands are ignored (Fanuc has no gripper)")
 println()
 println("Press 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
