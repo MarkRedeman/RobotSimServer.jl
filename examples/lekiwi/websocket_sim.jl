@@ -212,24 +212,21 @@ function ctrl!(m, d)
     d.ctrl[3] = wheel_vels[3]  # back wheel
 
     # === WebSocket Control ===
-    # Process commands from queue, handling base velocity commands specially
-    @lock server.lock begin
-        while !isempty(server.command_queue)
-            raw = popfirst!(server.command_queue)
+    # Process commands from channel, handling base velocity commands specially
+    while isready(server.control_channel)
+        raw = take!(server.control_channel)
 
-            # Check for base velocity command first
-            if handle_base_velocity_command!(raw)
-                continue
-            end
+        # Check for base velocity command first
+        if handle_base_velocity_command!(raw)
+            continue
+        end
 
-            # Otherwise handle as arm joint command
-            cmd = get(raw, "command", "")
-            if cmd == "set_joints_state"
-                joints = get(raw, "joints", Dict())
-                if !isempty(joints)
-                    apply_joint_command!(d, actuator_map, joints)
-                    server.is_controlled = true
-                end
+        # Otherwise handle as arm joint command
+        cmd = get(raw, "command", "")
+        if cmd == "set_joints_state"
+            joints = get(raw, "joints", Dict())
+            if !isempty(joints)
+                apply_joint_command!(d, actuator_map, joints)
             end
         end
     end
