@@ -29,7 +29,11 @@ description = "Run Trossen basic demo (no WebSocket)"
 run = "julia examples/trossen/basic_sim.jl"
 
 [tasks.fanuc]
-description = "Run Fanuc robot basic demo (default: m10ia)"
+description = "Run Fanuc robot with WebSocket control (default: m10ia)"
+run = "julia examples/fanuc/websocket_sim.jl"
+
+[tasks.fanuc-basic]
+description = "Run Fanuc robot basic demo (no WebSocket)"
 run = "julia examples/fanuc/basic_sim.jl"
 
 [tasks.fanuc-convert]
