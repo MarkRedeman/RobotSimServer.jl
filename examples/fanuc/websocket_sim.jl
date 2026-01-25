@@ -112,8 +112,21 @@ cubes = generate_cubes(50,
     size = 0.03 * cube_scale,      # Bigger cubes for industrial robots
     z = 0.04 * cube_scale)          # Higher off the ground
 
-# Build scene with cubes
-model, data = build_scene(xml_path, cubes)
+# --- Gripper Camera ---
+# Camera attached to the end-effector (link_6/flange), looking forward.
+# Fanuc robots have the tool flange along the +X axis of link_6.
+# We position the camera slightly forward and use a quaternion to look along +X.
+# Quaternion [0.5, 0.5, -0.5, 0.5] rotates camera from -Z to +X viewing direction.
+gripper_camera = BodyCamera(
+    name = "gripper_cam",
+    body = "link_6",
+    pos = [0.05, 0.0, 0.0],              # 5cm forward from flange
+    quat = [0.5, 0.5, -0.5, 0.5],        # Look along +X axis
+    fovy = 90.0
+)
+
+# Build scene with cubes and gripper camera
+model, data = build_scene(xml_path, cubes, cameras = [gripper_camera])
 
 println("Loaded model with $(model.nq) DOF, $(model.nu) actuators")
 
@@ -328,6 +341,13 @@ capture_config = CaptureConfig(
             orbiting = true,
             orbit_speed = 30.0,
             output = WebSocketOutput(port = 8084)
+        ),
+        # Gripper camera: first-person view from the end-effector
+        CameraSpec(
+            name = "gripper",
+            mode = :fixed,
+            model_camera = "gripper_cam",
+            output = WebSocketOutput(port = 8085)
         )
     ]
 )
@@ -338,7 +358,7 @@ init_visualiser()
 
 println("Starting Fanuc $robot simulation with IK-based control...")
 println("WebSocket control:  ws://localhost:8081")
-println("Camera streams:     ws://localhost:8082 (front), 8083 (side), 8084 (orbit)")
+println("Camera streams:     ws://localhost:8082 (front), 8083 (side), 8084 (orbit), 8085 (gripper)")
 println()
 println("IK-Based Mapping: SO101 joint commands → FK → scale → IK → Fanuc joints")
 println("Accepts SO101 joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper")
