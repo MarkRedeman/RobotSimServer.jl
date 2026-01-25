@@ -129,19 +129,19 @@ function update_from_keyboard!(ctrl::BaseVelocityController, window, GLFW)
         # Forward/backward (W/S)
         vx = 0.0
         if w_pressed
-            vx += ctrl.max_vx
+            vx -= ctrl.max_vx
         end
         if s_pressed
-            vx -= ctrl.max_vx
+            vx += ctrl.max_vx
         end
 
         # Rotation (A/D) - A = rotate left (positive omega)
         omega = 0.0
         if a_pressed
-            omega += ctrl.max_omega
+            omega -= ctrl.max_omega
         end
         if d_pressed
-            omega -= ctrl.max_omega
+            omega += ctrl.max_omega
         end
 
         # Strafe (Q/E) - Q = strafe left (positive vy)
