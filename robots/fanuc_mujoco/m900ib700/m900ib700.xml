@@ -1,0 +1,145 @@
+<?xml version="1.0" ?>
+<!-- MuJoCo model for FANUC M900IB700 -->
+<!-- Auto-generated from fanuc-industrial/fanuc_m900ib_support -->
+<mujoco model="m900ib700">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <default class="m900ib700">
+      <joint damping="100" frictionloss="10" armature="1"/>
+      <position kp="1000" kv="100"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh name="base_link_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/base_link.stl"/>
+    <mesh name="base_link_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/base_link.stl"/>
+    <mesh name="link_1_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_1.stl"/>
+    <mesh name="link_1_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_1.stl"/>
+    <mesh name="link_2_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_2.stl"/>
+    <mesh name="link_2_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_2.stl"/>
+    <mesh name="link_3_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_3.stl"/>
+    <mesh name="link_3_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_3.stl"/>
+    <mesh name="link_4_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_4.stl"/>
+    <mesh name="link_4_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_4.stl"/>
+    <mesh name="link_5_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_5.stl"/>
+    <mesh name="link_5_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_5.stl"/>
+    <mesh name="link_6_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/link_6.stl"/>
+    <mesh name="link_6_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/link_6.stl"/>
+    <mesh name="plink_1_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/counterweight.stl"/>
+    <mesh name="plink_1_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/counterweight.stl"/>
+    <mesh name="plink_2_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/bar.stl"/>
+    <mesh name="plink_2_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/bar.stl"/>
+    <mesh name="balancer_left_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/balancer.stl"/>
+    <mesh name="balancer_left_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/balancer.stl"/>
+    <mesh name="piston_left_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/piston.stl"/>
+    <mesh name="piston_left_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/piston.stl"/>
+    <mesh name="balancer_right_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/balancer.stl"/>
+    <mesh name="balancer_right_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/balancer.stl"/>
+    <mesh name="piston_right_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/piston.stl"/>
+    <mesh name="piston_right_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/piston.stl"/>
+    <mesh name="forklift_pockets_visual" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/visual/forklift_pockets.stl"/>
+    <mesh name="forklift_pockets_collision" file="../../fanuc-industrial/fanuc_m900ib_support/meshes/m900ib700/collision/forklift_pockets.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="base_link" childclass="m900ib700">
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+      <geom class="visual" mesh="base_link_visual" rgba="0.340 0.350 0.360 1.000"/>
+      <geom class="collision" mesh="base_link_collision"/>
+      <body name="link_1" pos="0 0 0.940" childclass="m900ib700">
+        <joint name="joint_1" type="hinge" axis="0 0 1" range="-3.1415 3.1415"/>
+        <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+        <geom class="visual" mesh="link_1_visual" rgba="0.960 0.760 0.130 1.000"/>
+        <geom class="collision" mesh="link_1_collision"/>
+        <body name="link_2" pos="0.410 0 0" childclass="m900ib700">
+          <joint name="joint_2" type="hinge" axis="0 1 0" range="-1.1170 1.5707"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="link_2_visual" rgba="0.960 0.760 0.130 1.000"/>
+          <geom class="collision" mesh="link_2_collision"/>
+          <body name="link_3" pos="0 0 1.120" childclass="m900ib700">
+            <joint name="joint_3" type="hinge" axis="0 -1 0" range="-2.2689 0.5235"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="link_3_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="link_3_collision"/>
+            <body name="link_4" pos="0 0 0.250" childclass="m900ib700">
+              <joint name="joint_4" type="hinge" axis="-1 0 0" range="-6.2831 6.2831"/>
+              <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+              <geom class="visual" mesh="link_4_visual" rgba="0.960 0.760 0.130 1.000"/>
+              <geom class="collision" mesh="link_4_collision"/>
+              <body name="link_5" pos="1.285 0 0" childclass="m900ib700">
+                <joint name="joint_5" type="hinge" axis="0 -1 0" range="-2.1293 2.1293"/>
+                <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                <geom class="visual" mesh="link_5_visual" rgba="0.960 0.760 0.130 1.000"/>
+                <geom class="collision" mesh="link_5_collision"/>
+                <body name="link_6" pos="0.300 0 0" childclass="m900ib700">
+                  <joint name="joint_6" type="hinge" axis="-1 0 0" range="-6.2831 6.2831"/>
+                  <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                  <geom class="visual" mesh="link_6_visual" rgba="0.150 0.150 0.150 1.000"/>
+                  <geom class="collision" mesh="link_6_collision"/>
+                </body>
+              </body>
+            </body>
+            <body name="plink_2" pos="-0.75 0.08 0" childclass="m900ib700">
+              <joint name="pjoint_2" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+              <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+              <geom class="visual" mesh="plink_2_visual" rgba="0.960 0.760 0.130 1.000"/>
+              <geom class="collision" mesh="plink_2_collision"/>
+            </body>
+          </body>
+          <body name="plink_1" pos="0 0 0" childclass="m900ib700">
+            <joint name="pjoint_1" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="plink_1_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="plink_1_collision"/>
+          </body>
+          <body name="balancer_left" pos="0 0 1.120" childclass="m900ib700">
+            <joint name="balancer_left_joint" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="balancer_left_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="balancer_left_collision"/>
+          </body>
+          <body name="balancer_right" pos="0 0 1.120" childclass="m900ib700">
+            <joint name="balancer_right_joint" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="balancer_right_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="balancer_right_collision"/>
+          </body>
+        </body>
+        <body name="piston_left" pos="0.410 0 0.235" childclass="m900ib700">
+          <joint name="piston_left_joint" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="piston_left_visual" rgba="0.960 0.760 0.130 1.000"/>
+          <geom class="collision" mesh="piston_left_collision"/>
+        </body>
+        <body name="piston_right" pos="0.410 0 0.235" childclass="m900ib700">
+          <joint name="piston_right_joint" type="hinge" axis="0 1 0" range="0.0000 0.0000"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="piston_right_visual" rgba="0.960 0.760 0.130 1.000"/>
+          <geom class="collision" mesh="piston_right_collision"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="balancer_left_joint_actuator" joint="balancer_left_joint" class="m900ib700"/>
+    <position name="balancer_right_joint_actuator" joint="balancer_right_joint" class="m900ib700"/>
+    <position name="joint_1_actuator" joint="joint_1" class="m900ib700"/>
+    <position name="joint_2_actuator" joint="joint_2" class="m900ib700"/>
+    <position name="joint_3_actuator" joint="joint_3" class="m900ib700"/>
+    <position name="joint_4_actuator" joint="joint_4" class="m900ib700"/>
+    <position name="joint_5_actuator" joint="joint_5" class="m900ib700"/>
+    <position name="joint_6_actuator" joint="joint_6" class="m900ib700"/>
+    <position name="piston_left_joint_actuator" joint="piston_left_joint" class="m900ib700"/>
+    <position name="piston_right_joint_actuator" joint="piston_right_joint" class="m900ib700"/>
+    <position name="pjoint_1_actuator" joint="pjoint_1" class="m900ib700"/>
+    <position name="pjoint_2_actuator" joint="pjoint_2" class="m900ib700"/>
+  </actuator>
+</mujoco>

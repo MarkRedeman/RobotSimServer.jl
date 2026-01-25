@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<!-- MuJoCo model for FANUC M430IA2F -->
+<!-- Auto-generated from fanuc-industrial/fanuc_m430ia_support -->
+<mujoco model="m430ia2f">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <default class="m430ia2f">
+      <joint damping="100" frictionloss="10" armature="1"/>
+      <position kp="1000" kv="100"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh name="base_link_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/base_link.stl"/>
+    <mesh name="base_link_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/base_link.stl"/>
+    <mesh name="link_1_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/link_1.stl"/>
+    <mesh name="link_1_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/link_1.stl"/>
+    <mesh name="link_2_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/link_2.stl"/>
+    <mesh name="link_2_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/link_2.stl"/>
+    <mesh name="link_3_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/link_3.stl"/>
+    <mesh name="link_3_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/link_3.stl"/>
+    <mesh name="link_4_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/link_4.stl"/>
+    <mesh name="link_4_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/link_4.stl"/>
+    <mesh name="link_5_visual" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/visual/link_5.stl"/>
+    <mesh name="link_5_collision" file="../../fanuc-industrial/fanuc_m430ia_support/meshes/m430ia2f/collision/link_5.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="base_link" childclass="m430ia2f">
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+      <geom class="visual" mesh="base_link_visual" rgba="0.860 0.850 0.810 1.000"/>
+      <geom class="collision" mesh="base_link_collision"/>
+      <body name="link_1" pos="0 0 0.440" childclass="m430ia2f">
+        <joint name="joint_1" type="hinge" axis="0 0 1" range="-3.1415 3.1415"/>
+        <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+        <geom class="visual" mesh="link_1_visual" rgba="0.860 0.850 0.810 1.000"/>
+        <geom class="collision" mesh="link_1_collision"/>
+        <body name="link_2" pos="0 0 0" childclass="m430ia2f">
+          <joint name="joint_2" type="hinge" axis="0 1 0" range="-2.0100 2.0100"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="link_2_visual" rgba="0.860 0.850 0.810 1.000"/>
+          <geom class="collision" mesh="link_2_collision"/>
+          <body name="link_3" pos="0 -0.095 0.350" childclass="m430ia2f">
+            <joint name="joint_3" type="hinge" axis="0 1 0" range="-3.3400 3.3400"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="link_3_visual" rgba="0.860 0.850 0.810 1.000"/>
+            <geom class="collision" mesh="link_3_collision"/>
+            <body name="link_4" pos="0 0 0.550" childclass="m430ia2f">
+              <joint name="joint_4" type="hinge" axis="0 1 0" range="-2.6200 2.6200"/>
+              <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+              <geom class="visual" mesh="link_4_visual" rgba="0.860 0.850 0.810 1.000"/>
+              <geom class="collision" mesh="link_4_collision"/>
+              <body name="link_5" pos="0 0 0.065" childclass="m430ia2f">
+                <joint name="joint_5" type="hinge" axis="0 0 1" range="-4.7100 4.7100"/>
+                <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                <geom class="visual" mesh="link_5_visual" rgba="0.860 0.850 0.810 1.000"/>
+                <geom class="collision" mesh="link_5_collision"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="joint_1_actuator" joint="joint_1" class="m430ia2f"/>
+    <position name="joint_2_actuator" joint="joint_2" class="m430ia2f"/>
+    <position name="joint_3_actuator" joint="joint_3" class="m430ia2f"/>
+    <position name="joint_4_actuator" joint="joint_4" class="m430ia2f"/>
+    <position name="joint_5_actuator" joint="joint_5" class="m430ia2f"/>
+  </actuator>
+</mujoco>

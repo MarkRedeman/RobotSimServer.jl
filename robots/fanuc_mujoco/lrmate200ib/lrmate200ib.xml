@@ -1,0 +1,89 @@
+<?xml version="1.0" ?>
+<!-- MuJoCo model for FANUC LRMATE200IB -->
+<!-- Auto-generated from fanuc-industrial/fanuc_lrmate200ib_support -->
+<mujoco model="lrmate200ib">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <default class="lrmate200ib">
+      <joint damping="100" frictionloss="10" armature="1"/>
+      <position kp="1000" kv="100"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh name="base_link_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/base_link.stl"/>
+    <mesh name="base_link_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/base_link.stl"/>
+    <mesh name="link_1_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_1.stl"/>
+    <mesh name="link_1_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_1.stl"/>
+    <mesh name="link_2_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_2.stl"/>
+    <mesh name="link_2_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_2.stl"/>
+    <mesh name="link_3_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_3.stl"/>
+    <mesh name="link_3_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_3.stl"/>
+    <mesh name="link_4_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_4.stl"/>
+    <mesh name="link_4_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_4.stl"/>
+    <mesh name="link_5_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_5.stl"/>
+    <mesh name="link_5_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_5.stl"/>
+    <mesh name="link_6_visual" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/visual/link_6.stl"/>
+    <mesh name="link_6_collision" file="../../fanuc-industrial/fanuc_lrmate200ib_support/meshes/lrmate200ib/collision/link_6.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="base_link" childclass="lrmate200ib">
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+      <geom class="visual" mesh="base_link_visual" rgba="0.960 0.760 0.130 1.000"/>
+      <geom class="collision" mesh="base_link_collision"/>
+      <body name="link_1" pos="0 0 0.350" childclass="lrmate200ib">
+        <joint name="joint_1" type="hinge" axis="0 0 1" range="-2.7925 2.7925"/>
+        <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+        <geom class="visual" mesh="link_1_visual" rgba="0.960 0.760 0.130 1.000"/>
+        <geom class="collision" mesh="link_1_collision"/>
+        <body name="link_2" pos="0.150 0 0" childclass="lrmate200ib">
+          <joint name="joint_2" type="hinge" axis="0 1 0" range="-0.5759 2.6529"/>
+          <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+          <geom class="visual" mesh="link_2_visual" rgba="0.960 0.760 0.130 1.000"/>
+          <geom class="collision" mesh="link_2_collision"/>
+          <body name="link_3" pos="0 0 0.250" childclass="lrmate200ib">
+            <joint name="joint_3" type="hinge" axis="0 -1 0" range="-2.6145 2.8797"/>
+            <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+            <geom class="visual" mesh="link_3_visual" rgba="0.960 0.760 0.130 1.000"/>
+            <geom class="collision" mesh="link_3_collision"/>
+            <body name="link_4" pos="0 0 0.075" childclass="lrmate200ib">
+              <joint name="joint_4" type="hinge" axis="-1 0 0" range="-3.3161 3.3161"/>
+              <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+              <geom class="visual" mesh="link_4_visual" rgba="0.960 0.760 0.130 1.000"/>
+              <geom class="collision" mesh="link_4_collision"/>
+              <body name="link_5" pos="0.290 0 0" childclass="lrmate200ib">
+                <joint name="joint_5" type="hinge" axis="0 -1 0" range="-2.0943 2.0943"/>
+                <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                <geom class="visual" mesh="link_5_visual" rgba="0.960 0.760 0.130 1.000"/>
+                <geom class="collision" mesh="link_5_collision"/>
+                <body name="link_6" pos="0.080 0 0" childclass="lrmate200ib">
+                  <joint name="joint_6" type="hinge" axis="-1 0 0" range="-6.2831 6.2831"/>
+                  <inertial pos="0 0 0" mass="1.0" diaginertia="0.01 0.01 0.01"/>
+                  <geom class="visual" mesh="link_6_visual" rgba="0.150 0.150 0.150 1.000"/>
+                  <geom class="collision" mesh="link_6_collision"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="joint_1_actuator" joint="joint_1" class="lrmate200ib"/>
+    <position name="joint_2_actuator" joint="joint_2" class="lrmate200ib"/>
+    <position name="joint_3_actuator" joint="joint_3" class="lrmate200ib"/>
+    <position name="joint_4_actuator" joint="joint_4" class="lrmate200ib"/>
+    <position name="joint_5_actuator" joint="joint_5" class="lrmate200ib"/>
+    <position name="joint_6_actuator" joint="joint_6" class="lrmate200ib"/>
+  </actuator>
+</mujoco>
