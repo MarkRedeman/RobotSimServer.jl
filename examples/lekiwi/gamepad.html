@@ -401,8 +401,8 @@
                     <h3>Modifiers</h3>
                     <div class="command-values">
                         <div class="command-row">
-                            <span class="command-label">Speed Boost</span>
-                            <span class="boost-indicator" id="boostIndicator">LB</span>
+                            <span class="command-label">Speed Boost (LT)</span>
+                            <span class="command-value" id="boostIndicator">1.00x</span>
                         </div>
                     </div>
                 </div>
@@ -417,8 +417,8 @@
                     <span>Turn (X axis)</span>
                 </div>
                 <div class="legend-row">
-                    <span class="legend-key">LB Button</span>
-                    <span>2x Speed Boost</span>
+                    <span class="legend-key">LT Trigger</span>
+                    <span>Speed Boost (1x → 2x, quadratic)</span>
                 </div>
             </div>
         </div>
@@ -520,7 +520,7 @@
         const MAX_VX = 0.15;      // m/s forward/back
         const MAX_VY = 0.10;      // m/s strafe
         const MAX_OMEGA = 0.8;    // rad/s rotation
-        const SPEED_BOOST = 2.0;  // LB multiplier
+        const MAX_SPEED_BOOST = 2.0;  // Maximum boost at full LT (quadratic scaling)
 
 
 
@@ -538,7 +538,7 @@
             vx: 0,
             vy: 0,
             omega: 0,
-            boostActive: false
+            boostMultiplier: 1.0  // 1.0 = no boost, up to MAX_SPEED_BOOST
         };
 
         // =============================================================================
@@ -566,7 +566,7 @@
 
         // Buttons to show in the main grid (excluding D-pad)
         const GRID_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 16];
-        const SPECIAL_BUTTONS = [4]; // LB highlighted as special (speed boost)
+        const SPECIAL_BUTTONS = []; // No special buttons (LT trigger handles boost)
 
         // =============================================================================
         // DOM Elements
@@ -714,8 +714,9 @@
             cmdVy.classList.toggle('active', Math.abs(currentCommands.vy) > 0.001);
             cmdOmega.classList.toggle('active', Math.abs(currentCommands.omega) > 0.001);
 
-            // Update boost indicator
-            boostIndicator.classList.toggle('active', currentCommands.boostActive);
+            // Update boost indicator (show multiplier value)
+            boostIndicator.textContent = currentCommands.boostMultiplier.toFixed(2) + 'x';
+            boostIndicator.classList.toggle('active', currentCommands.boostMultiplier > 1.01);
         }
 
         // =============================================================================
@@ -782,9 +783,10 @@
                 updateButton(index, button.pressed);
             });
 
-            // Check LB for speed boost (button 4)
-            const boostActive = gp.buttons[4] ? gp.buttons[4].pressed : false;
-            const speedMultiplier = boostActive ? SPEED_BOOST : 1.0;
+            // LT for speed boost (quadratic scaling for fine control)
+            // lt is 0-1, we want multiplier from 1.0 to MAX_SPEED_BOOST
+            const boostRange = MAX_SPEED_BOOST - 1.0;
+            const speedMultiplier = 1.0 + (lt * lt) * boostRange;
 
             // Calculate robot commands
             // Left stick Y -> vx (stick up = -1, forward = +vx, so invert)
@@ -794,7 +796,7 @@
             currentCommands.vx = ly * MAX_VX * speedMultiplier;
             currentCommands.vy = -lx * MAX_VY * speedMultiplier;
             currentCommands.omega = rx * MAX_OMEGA * speedMultiplier;
-            currentCommands.boostActive = boostActive;
+            currentCommands.boostMultiplier = speedMultiplier;
 
             // Update command display
             updateCommandDisplay();
@@ -849,7 +851,7 @@
             });
 
             // Reset commands
-            currentCommands = { vx: 0, vy: 0, omega: 0, boostActive: false };
+            currentCommands = { vx: 0, vy: 0, omega: 0, boostMultiplier: 1.0 };
             updateCommandDisplay();
         }
 
