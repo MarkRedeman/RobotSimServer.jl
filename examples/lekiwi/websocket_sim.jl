@@ -1,7 +1,7 @@
 # LeKiwi Mobile Robot Simulation with WebSocket Control and Multi-Camera Capture
 #
 # This script runs a MuJoCo simulation of the LeKiwi mobile manipulator with:
-# - WebSocket server for external arm control (port 8081)
+# - Unified WebSocket server on port 8080 with path-based routing
 # - Keyboard control for mobile base (WASD + QE for strafing, Shift for speed boost)
 # - WebSocket base velocity commands (set_base_velocity)
 # - Multi-camera capture (WebSocket streams)
@@ -32,7 +32,7 @@ using MuJoCo.LibMuJoCo
 
 # Load shared modules
 include("../../src/SceneBuilder.jl")
-include("../../src/WebSocketServer.jl")
+include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/BaseController.jl")
 include("../../src/capture/Capture.jl")
 
@@ -133,9 +133,9 @@ function body_to_wheel_velocities(vx::Float64, vy::Float64, omega::Float64)
 end
 
 # ============================================================================
-# WebSocket Server
+# WebSocket Server (Unified - single port with path-based routing)
 # ============================================================================
-server = WebSocketControlServer(port = 8081, fps = 30.0)
+server = UnifiedServer(port = 8080, robot = "lekiwi", fps = 30.0)
 
 # ============================================================================
 # Base Velocity Controller
@@ -197,7 +197,7 @@ function handle_base_velocity_command!(raw::Dict)
 end
 
 # Start WebSocket server
-start_server!(server, get_joint_state)
+start!(server, get_joint_state)
 
 # ============================================================================
 # Controller Function
@@ -257,14 +257,14 @@ capture_config = CaptureConfig(
             name = "front",
             mode = :fixed,
             model_camera = "front",
-            output = WebSocketOutput(port = 8082)
+            output = WebSocketOutput(server = server)
         ),
         # Wrist camera: built-in model camera on the gripper
         CameraSpec(
             name = "wrist",
             mode = :fixed,
             model_camera = "wrist",
-            output = WebSocketOutput(port = 8083)
+            output = WebSocketOutput(server = server)
         ),
         # Left side camera: external view from the left
         CameraSpec(
@@ -273,7 +273,7 @@ capture_config = CaptureConfig(
             distance = 1.0,
             azimuth = 90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8084)
+            output = WebSocketOutput(server = server)
         ),
         # Right side camera: external view from the right
         CameraSpec(
@@ -282,10 +282,17 @@ capture_config = CaptureConfig(
             distance = 1.0,
             azimuth = -90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8085)
+            output = WebSocketOutput(server = server)
         )
     ]
 )
+
+# Register camera endpoints with the unified server
+for cam in capture_config.cameras
+    if cam.output isa WebSocketOutput && cam.output.server !== nothing
+        register_camera!(server, cam.name)
+    end
+end
 
 # ============================================================================
 # Run Visualization
@@ -296,12 +303,12 @@ init_visualiser()
 println("\n" * "="^60)
 println("LeKiwi Mobile Manipulator Simulation")
 println("="^60)
-println("\nWebSocket Endpoints:")
-println("  Control: ws://localhost:8081")
-println("  Front camera: ws://localhost:8082")
-println("  Wrist camera: ws://localhost:8083")
-println("  Left side camera: ws://localhost:8084")
-println("  Right side camera: ws://localhost:8085")
+println("\nWebSocket Endpoints (all on port 8080):")
+println("  Control:           ws://localhost:8080/lekiwi/control")
+println("  Front camera:      ws://localhost:8080/lekiwi/cameras/front")
+println("  Wrist camera:      ws://localhost:8080/lekiwi/cameras/wrist")
+println("  Left side camera:  ws://localhost:8080/lekiwi/cameras/side_left")
+println("  Right side camera: ws://localhost:8080/lekiwi/cameras/side_right")
 println("\nArm Control (via WebSocket):")
 println("  Joint names: shoulder_pan, shoulder_lift, elbow_flex,")
 println("               wrist_flex, wrist_roll, gripper")

@@ -1,7 +1,7 @@
 # Trossen Robot Arm Simulation with WebSocket Control and Multi-Camera Capture
 #
 # This script runs a MuJoCo simulation of the Trossen WXAI robot arm with:
-# - WebSocket server for external joint control (port 8081)
+# - Unified WebSocket server on port 8080 with path-based routing
 # - Multi-camera capture (WebSocket streams)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
@@ -21,7 +21,7 @@ using MuJoCo.LibMuJoCo
 
 # Load shared modules
 include("../../src/SceneBuilder.jl")
-include("../../src/WebSocketServer.jl")
+include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/capture/Capture.jl")
 
 # --- Scene Setup ---
@@ -131,8 +131,8 @@ println("Trossen actuators: ", trossen_actuator_names)
 so101_joint_names = collect(keys(SO101_TO_TROSSEN_MAP))
 println("Accepting SO101 joints: ", so101_joint_names)
 
-# --- WebSocket Server ---
-server = WebSocketControlServer(port = 8081, fps = 30.0)
+# --- WebSocket Server (Unified - single port with path-based routing) ---
+server = UnifiedServer(port = 8080, robot = "trossen/wxai", fps = 30.0)
 
 # Robot-specific: how to get joint state (in degrees, as SO101 joint names)
 function get_joint_state(model, data)
@@ -193,7 +193,7 @@ function apply_joint_command!(data, actuator_map, joints)
 end
 
 # Start WebSocket server
-start_server!(server, get_joint_state)
+start!(server, get_joint_state)
 println("Note: Accepts SO101 joint names, maps internally to Trossen joints")
 
 # --- Controller Function ---
@@ -222,7 +222,7 @@ capture_config = CaptureConfig(
             distance = 1.4,               # Slightly further back
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8082)
+            output = WebSocketOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -231,7 +231,7 @@ capture_config = CaptureConfig(
             distance = 1.4,
             azimuth = 90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8083)
+            output = WebSocketOutput(server = server)
         ),
         # Orbit camera: rotating external view
         CameraSpec(
@@ -242,24 +242,40 @@ capture_config = CaptureConfig(
             elevation = -30.0,
             orbiting = true,
             orbit_speed = 30.0,
-            output = WebSocketOutput(port = 8084)
+            output = WebSocketOutput(server = server)
         ),
         # Gripper camera: first-person view from inside the gripper
         CameraSpec(
             name = "gripper",
             mode = :fixed,
             model_camera = "gripper_cam",
-            output = WebSocketOutput(port = 8085)
+            output = WebSocketOutput(server = server)
         )
     ]
 )
+
+# Register camera endpoints with the unified server
+for cam in capture_config.cameras
+    if cam.output isa WebSocketOutput && cam.output.server !== nothing
+        register_camera!(server, cam.name)
+    end
+end
 
 # --- Run Visualization ---
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("Starting Trossen simulation with multi-camera capture...")
-println("Press 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
+println("\n" * "="^60)
+println("Trossen WXAI Robot Arm Simulation")
+println("="^60)
+println("\nWebSocket Endpoints (all on port 8080):")
+println("  Control:        ws://localhost:8080/trossen/wxai/control")
+println("  Front camera:   ws://localhost:8080/trossen/wxai/cameras/front")
+println("  Side camera:    ws://localhost:8080/trossen/wxai/cameras/side")
+println("  Orbit camera:   ws://localhost:8080/trossen/wxai/cameras/orbit")
+println("  Gripper camera: ws://localhost:8080/trossen/wxai/cameras/gripper")
+println("="^60)
+println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,
     controller = ctrl!,
