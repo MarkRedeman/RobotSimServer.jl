@@ -32,6 +32,7 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 │   ├── so101/                     # SO101 robot examples
 │   ├── trossen/                   # Trossen WXAI examples
 │   ├── franka/                    # Franka Panda examples
+│   ├── fanuc/                     # Fanuc industrial robot examples
 │   └── clients/                   # Test client examples
 │
 ├── robots/                        # Robot model submodules (git submodules)
@@ -276,6 +277,7 @@ git add -A && git commit -m "style: format Julia code"
 | Side | 8083 | External side view |
 | Orbit | 8084 | Rotating view |
 | Gripper | 8085 | First-person gripper view |
+| Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
 *Each port streams raw JPEG frames over WebSocket.*
 

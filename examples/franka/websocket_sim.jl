@@ -344,18 +344,18 @@ capture_config = CaptureConfig(
             orbit_speed = 30.0,
             output = WebSocketOutput(port = 8084)
         ),
-        # Wrist camera: added to link7
-        CameraSpec(
-            name = "wrist",
-            mode = :fixed,
-            model_camera = "wrist_cam",
-            output = WebSocketOutput(port = 8085)
-        ),
-        # Gripper camera: added to hand body
+        # Gripper camera: added to hand body (matches SO101/Trossen port assignment)
         CameraSpec(
             name = "gripper",
             mode = :fixed,
             model_camera = "gripper_cam",
+            output = WebSocketOutput(port = 8085)
+        ),
+        # Wrist camera: added to link7 (Franka-specific extra camera)
+        CameraSpec(
+            name = "wrist",
+            mode = :fixed,
+            model_camera = "wrist_cam",
             output = WebSocketOutput(port = 8086)
         )
     ]
@@ -375,8 +375,8 @@ println("  Control:        ws://localhost:8081")
 println("  Front camera:   ws://localhost:8082")
 println("  Side camera:    ws://localhost:8083")
 println("  Orbit camera:   ws://localhost:8084")
-println("  Wrist camera:   ws://localhost:8085")
-println("  Gripper camera: ws://localhost:8086")
+println("  Gripper camera: ws://localhost:8085")
+println("  Wrist camera:   ws://localhost:8086")
 println("\nIK-Based Mapping:")
 println("  SO101 joints → FK → scale $(round(WORKSPACE_SCALE, digits=2))x → IK → Franka joints")
 println("\nAccepts SO101 joints:")

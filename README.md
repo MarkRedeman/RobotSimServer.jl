@@ -64,9 +64,13 @@ mise run trossen
 | `mise run so101` | Run SO101 robot with WebSocket control |
 | `mise run trossen` | Run Trossen robot with WebSocket control |
 | `mise run franka` | Run Franka Panda with WebSocket control |
+| `mise run lekiwi` | Run LeKiwi mobile robot with WebSocket arm control |
+| `mise run fanuc` | Run Fanuc robot with WebSocket control |
 | `mise run so101-basic` | Run SO101 basic demo (no WebSocket) |
 | `mise run trossen-basic` | Run Trossen basic demo (no WebSocket) |
 | `mise run franka-basic` | Run Franka Panda basic demo (no WebSocket) |
+| `mise run lekiwi-basic` | Run LeKiwi basic demo (drives in circles) |
+| `mise run fanuc-basic` | Run Fanuc basic demo (no WebSocket) |
 | `mise run format` | Format all Julia code |
 | `mise run client` | Run WebSocket test client |
 
