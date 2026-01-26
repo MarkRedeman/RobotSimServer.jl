@@ -13,9 +13,10 @@
 
 using MuJoCo
 
-# Path to the Franka Panda model (MuJoCo Menagerie)
+# Path to the Franka Panda scene (MuJoCo Menagerie)
+# Use scene.xml which includes a floor (panda.xml alone has no ground plane)
 xml_path = joinpath(@__DIR__, "..", "..", "robots", "google-deepmind",
-    "franka_emika_panda", "panda.xml")
+    "franka_emika_panda", "scene.xml")
 println("Loading Franka Panda from: $xml_path")
 
 # Load the model and data

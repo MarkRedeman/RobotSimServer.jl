@@ -66,8 +66,9 @@ const SO101_GRIPPER_MAX = 100.0     # Fully open (degrees)
 # =============================================================================
 # Scene Setup
 # =============================================================================
+# Use scene.xml which includes a floor (panda.xml alone has no ground plane)
 xml_path = joinpath(@__DIR__, "..", "..", "robots", "google-deepmind",
-    "franka_emika_panda", "panda.xml")
+    "franka_emika_panda", "scene.xml")
 println("Loading Franka Panda from: $xml_path")
 
 # Generate cubes in front of the robot, within its reach
