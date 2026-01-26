@@ -22,7 +22,7 @@ This repository provides example MuJoCo simulations that can be controlled via W
 
 ## Features
 
-- **Multi-robot support**: SO101, Trossen WXAI, and 19 Fanuc industrial robot families (33 variants)
+- **Multi-robot support**: SO101, Trossen WXAI, Franka Panda, and 19 Fanuc industrial robot families (33 variants)
 - **WebSocket control interface**: JSON-based protocol on port 8081
 - **ZMQ control interface**: Alternative REQ/REP protocol on port 5555
 - **Multi-camera capture system**:
@@ -63,8 +63,10 @@ mise run trossen
 | `mise run setup` | Install dependencies and MuJoCo visualizer |
 | `mise run so101` | Run SO101 robot with WebSocket control |
 | `mise run trossen` | Run Trossen robot with WebSocket control |
+| `mise run franka` | Run Franka Panda with WebSocket control |
 | `mise run so101-basic` | Run SO101 basic demo (no WebSocket) |
 | `mise run trossen-basic` | Run Trossen basic demo (no WebSocket) |
+| `mise run franka-basic` | Run Franka Panda basic demo (no WebSocket) |
 | `mise run format` | Format all Julia code |
 | `mise run client` | Run WebSocket test client |
 
@@ -118,6 +120,9 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │   ├── trossen/                   # Trossen WXAI examples
 │   │   ├── basic_sim.jl           # Simple sine wave demo
 │   │   └── websocket_sim.jl       # Full WebSocket + cameras
+│   ├── franka/                    # Franka Panda examples
+│   │   ├── basic_sim.jl           # Simple sine wave demo
+│   │   └── websocket_sim.jl       # Full WebSocket + cameras + IK
 │   ├── fanuc/                     # Fanuc industrial robot examples
 │   │   └── basic_sim.jl           # Multi-robot demo (19+ robots)
 │   └── clients/                   # Test client examples
@@ -128,6 +133,8 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 ├── robots/                        # Robot model submodules
 │   ├── SO-ARM100/                 # SO101 robot (git submodule)
 │   ├── trossen_arm_mujoco/        # Trossen WXAI (git submodule)
+│   ├── franka/                    # Franka Panda (git submodule)
+│   ├── google-deepmind/           # MuJoCo Menagerie models (git submodule)
 │   ├── fanuc-industrial/          # ROS-Industrial Fanuc (git submodule)
 │   └── fanuc_mujoco/              # Generated MuJoCo XMLs for Fanuc
 │
@@ -154,6 +161,15 @@ A 6-DOF research robot arm with:
 - **Joints**: joint_0 through joint_5, left_gripper
 - **SO101 Compatibility**: Accepts SO101 joint names, maps internally
 - **Gripper**: Slide joint (0 to 0.044 meters)
+
+### Franka Panda
+
+A 7-DOF research/industrial robot arm with parallel-jaw gripper:
+- **Joints**: joint1 through joint7
+- **Control**: IK-based mapping from SO101 commands
+- **Gripper**: 0-255 actuator range (0-0.04m opening)
+- **State reporting**: 7 joints mapped to SO101-compatible names + extra DOFs (wrist_yaw, wrist_twist)
+- **Model**: Uses MuJoCo Menagerie franka_emika_panda
 
 ### Fanuc Industrial Robots
 
@@ -209,6 +225,16 @@ julia --project=. examples/trossen/basic_sim.jl
 
 # WebSocket control with multi-camera capture
 julia --project=. -t 4 examples/trossen/websocket_sim.jl
+```
+
+### Franka Examples
+
+```bash
+# Basic demo
+julia --project=. examples/franka/basic_sim.jl
+
+# WebSocket control with IK-based mapping
+julia --project=. -t 4 examples/franka/websocket_sim.jl
 ```
 
 ### Fanuc Examples
@@ -317,8 +343,11 @@ When running WebSocket simulations, camera feeds are available on separate ports
 | Side | 8083 | External view from side |
 | Orbit | 8084 | Rotating external view |
 | Gripper | 8085 | First-person gripper view |
+| Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
 Each port streams raw JPEG frames over WebSocket.
+
+> **Note**: Franka Panda uses 5 cameras (ports 8082-8086) including both wrist and gripper cameras.
 
 ## Scene Builder
 
