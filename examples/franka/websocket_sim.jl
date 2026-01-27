@@ -1,7 +1,7 @@
 # Franka Panda Robot Simulation with WebSocket Control and Multi-Camera Capture
 #
 # This script runs a MuJoCo simulation of the Franka Panda 7-DOF robot arm with:
-# - WebSocket server for external joint control (port 8081)
+# - Unified WebSocket server on port 8080 with path-based routing
 # - Multi-camera capture (WebSocket streams)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
@@ -44,7 +44,7 @@ using MuJoCo.LibMuJoCo
 
 # Load shared modules
 include("../../src/SceneBuilder.jl")
-include("../../src/WebSocketServer.jl")
+include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/capture/Capture.jl")
 include("../../src/Kinematics.jl")
 
@@ -206,9 +206,9 @@ const FRANKA_TO_SO101_MAP = Dict{String, String}(
 )
 
 # =============================================================================
-# WebSocket Server
+# WebSocket Server (Unified - single port with path-based routing)
 # =============================================================================
-server = WebSocketControlServer(port = 8081, fps = 30.0)
+server = UnifiedServer(port = 8080, robot = "franka", fps = 30.0)
 
 # Get joint state in degrees, using SO101-compatible names where possible
 function get_joint_state(model, data)
@@ -293,7 +293,7 @@ function apply_joint_command!(franka_data, actuator_map_unused, joints)
 end
 
 # Start WebSocket server
-start_server!(server, get_joint_state)
+start!(server, get_joint_state)
 
 # =============================================================================
 # Controller Function
@@ -322,7 +322,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8082)
+            output = WebSocketOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -331,7 +331,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8083)
+            output = WebSocketOutput(server = server)
         ),
         # Orbit camera: rotating external view
         CameraSpec(
@@ -342,24 +342,31 @@ capture_config = CaptureConfig(
             elevation = -30.0,
             orbiting = true,
             orbit_speed = 30.0,
-            output = WebSocketOutput(port = 8084)
+            output = WebSocketOutput(server = server)
         ),
         # Gripper camera: added to hand body (matches SO101/Trossen port assignment)
         CameraSpec(
             name = "gripper",
             mode = :fixed,
             model_camera = "gripper_cam",
-            output = WebSocketOutput(port = 8085)
+            output = WebSocketOutput(server = server)
         ),
         # Wrist camera: added to link7 (Franka-specific extra camera)
         CameraSpec(
             name = "wrist",
             mode = :fixed,
             model_camera = "wrist_cam",
-            output = WebSocketOutput(port = 8086)
+            output = WebSocketOutput(server = server)
         )
     ]
 )
+
+# Register camera endpoints with the unified server
+for cam in capture_config.cameras
+    if cam.output isa WebSocketOutput && cam.output.server !== nothing
+        register_camera!(server, cam.name)
+    end
+end
 
 # =============================================================================
 # Run Visualization
@@ -370,13 +377,13 @@ init_visualiser()
 println("\n" * "="^70)
 println("Franka Panda Simulation with IK-Based Control")
 println("="^70)
-println("\nWebSocket Endpoints:")
-println("  Control:        ws://localhost:8081")
-println("  Front camera:   ws://localhost:8082")
-println("  Side camera:    ws://localhost:8083")
-println("  Orbit camera:   ws://localhost:8084")
-println("  Gripper camera: ws://localhost:8085")
-println("  Wrist camera:   ws://localhost:8086")
+println("\nWebSocket Endpoints (all on port 8080):")
+println("  Control:        ws://localhost:8080/franka/control")
+println("  Front camera:   ws://localhost:8080/franka/cameras/front")
+println("  Side camera:    ws://localhost:8080/franka/cameras/side")
+println("  Orbit camera:   ws://localhost:8080/franka/cameras/orbit")
+println("  Gripper camera: ws://localhost:8080/franka/cameras/gripper")
+println("  Wrist camera:   ws://localhost:8080/franka/cameras/wrist")
 println("\nIK-Based Mapping:")
 println("  SO101 joints → FK → scale $(round(WORKSPACE_SCALE, digits=2))x → IK → Franka joints")
 println("\nAccepts SO101 joints:")
