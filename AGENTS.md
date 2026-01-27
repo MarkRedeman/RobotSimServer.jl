@@ -31,11 +31,15 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 ├── examples/                      # Runnable simulation scripts
 │   ├── so101/                     # SO101 robot examples
 │   ├── trossen/                   # Trossen WXAI examples
+│   ├── franka/                    # Franka Panda examples
+│   ├── fanuc/                     # Fanuc industrial robot examples
 │   └── clients/                   # Test client examples
 │
 ├── robots/                        # Robot model submodules (git submodules)
 │   ├── SO-ARM100/
-│   └── trossen_arm_mujoco/
+│   ├── trossen_arm_mujoco/
+│   ├── franka/
+│   └── google-deepmind/           # MuJoCo Menagerie models
 │
 ├── .github/workflows/             # CI/CD configuration
 │   └── CI.yml                     # Format check + syntax validation
@@ -109,8 +113,10 @@ mise run setup
 # Run simulations
 mise run so101              # SO101 with WebSocket control
 mise run trossen            # Trossen WXAI with WebSocket control
+mise run franka             # Franka Panda with WebSocket control
 mise run so101-basic        # SO101 basic demo
 mise run trossen-basic      # Trossen basic demo
+mise run franka-basic       # Franka Panda basic demo
 
 # Development
 mise run format             # Format all Julia code
@@ -185,6 +191,7 @@ git add -A && git commit -m "style: format Julia code"
 1. Create file in appropriate directory:
    - `examples/so101/` for SO101 robot
    - `examples/trossen/` for Trossen robot
+   - `examples/franka/` for Franka Panda
    - `examples/clients/` for client utilities
 
 2. Use relative includes for library code:
@@ -270,6 +277,7 @@ git add -A && git commit -m "style: format Julia code"
 | Side | 8083 | External side view |
 | Orbit | 8084 | Rotating view |
 | Gripper | 8085 | First-person gripper view |
+| Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
 *Each port streams raw JPEG frames over WebSocket.*
 

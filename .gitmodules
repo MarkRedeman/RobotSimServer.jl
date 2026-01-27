@@ -10,3 +10,9 @@
 [submodule "robots/lekiwi"]
 	path = robots/lekiwi
 	url = git@github.com:Ekumen-OS/lekiwi.git
+[submodule "robots/franka"]
+	path = robots/franka
+	url = git@github.com:vikashplus/franka_sim.git
+[submodule "robots/google-deepmind"]
+	path = robots/google-deepmind
+	url = git@github.com:google-deepmind/mujoco_menagerie.git
