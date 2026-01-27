@@ -28,6 +28,14 @@ run = "julia examples/so101/basic_sim.jl"
 description = "Run Trossen basic demo (no WebSocket)"
 run = "julia examples/trossen/basic_sim.jl"
 
+[tasks.lekiwi]
+description = "Run LeKiwi mobile robot with WebSocket arm control"
+run = "julia examples/lekiwi/websocket_sim.jl"
+
+[tasks.lekiwi-basic]
+description = "Run LeKiwi mobile robot basic demo (drives in circles)"
+run = "julia examples/lekiwi/basic_sim.jl"
+
 [tasks.fanuc]
 description = "Run Fanuc robot with WebSocket control (default: m10ia)"
 run = "julia examples/fanuc/websocket_sim.jl"

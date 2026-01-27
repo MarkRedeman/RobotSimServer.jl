@@ -7,3 +7,6 @@
 [submodule "robots/fanuc-industrial"]
 	path = robots/fanuc-industrial
 	url = git@github.com:ros-industrial/fanuc.git
+[submodule "robots/lekiwi"]
+	path = robots/lekiwi
+	url = git@github.com:Ekumen-OS/lekiwi.git

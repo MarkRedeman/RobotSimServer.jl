@@ -51,7 +51,7 @@ function get_visualiser_ext()
 end
 
 """
-    run_with_capture!(model, data; controller=nothing, capture=CaptureConfig(...))
+    run_with_capture!(model, data; controller=nothing, capture=CaptureConfig(...), keyboard_handler=nothing, disabled_keys=nothing)
 
 Run the MuJoCo visualizer with multi-camera capture.
 This is a replacement for `visualise!()` that adds capture functionality.
@@ -61,10 +61,17 @@ This is a replacement for `visualise!()` that adds capture functionality.
 - `data`: MuJoCo Data
 - `controller`: Optional controller function called at each physics step
 - `capture`: CaptureConfig specifying cameras and output backends
+- `keyboard_handler`: Optional function `(window, GLFW) -> nothing` called after GLFW.PollEvents()
+                      for custom keyboard input handling (e.g., WASD base control)
+- `disabled_keys`: Optional set of key characters to disable from MuJoCo's default handlers.
+                   Use `Set(['W','A','S','D','Q','E'])` to disable WASD+QE for custom control.
+                   These keys normally toggle visualization/render flags in MuJoCo.
 """
 function run_with_capture!(model::MuJoCo.Model, data::MuJoCo.Data;
         controller = nothing,
-        capture::CaptureConfig)
+        capture::CaptureConfig,
+        keyboard_handler = nothing,
+        disabled_keys::Union{Nothing, Set{Char}} = nothing)
     ext = get_visualiser_ext()
 
     # Get types and functions from extension
@@ -90,6 +97,21 @@ function run_with_capture!(model::MuJoCo.Model, data::MuJoCo.Data;
     window_size = default_windowsize()
     engine = Engine(window_size, model, data, Tuple(modes))
 
+    # Deregister conflicting key handlers if disabled_keys is specified
+    if disabled_keys !== nothing
+        deregister! = ext.deregister!
+        handlers_to_remove = filter(engine.handlers) do h
+            # Check if handler's 'when' field matches a disabled key
+            when = h.when
+            when !== nothing && length(when) == 1 && first(when) in disabled_keys
+        end
+        if !isempty(handlers_to_remove)
+            deregister!(engine.manager, handlers_to_remove...)
+            disabled_str = join(sort(collect(disabled_keys)), ", ")
+            println("Disabled MuJoCo key handlers: $disabled_str")
+        end
+    end
+
     # Initialize capture manager (pass model for fixed camera lookups)
     manager = init_capture_manager(capture, model)
 
@@ -114,6 +136,12 @@ function run_with_capture!(model::MuJoCo.Model, data::MuJoCo.Data;
             # Poll events and prepare visualization
             @lock engine.phys.lock begin
                 GLFW.PollEvents()
+
+                # Call keyboard handler if provided (e.g., for WASD base control)
+                if keyboard_handler !== nothing
+                    keyboard_handler(engine.manager.state.window, GLFW)
+                end
+
                 prepare!(engine)
             end
 
