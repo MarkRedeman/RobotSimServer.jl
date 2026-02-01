@@ -97,6 +97,29 @@ const WHEEL_RADIUS = 0.05       # meters
 const BASE_RADIUS = 0.125       # meters
 const WHEEL_ANGLES = [π / 2, π / 2 + 2π / 3, π / 2 + 4π / 3]
 
+# Wheel joint names and their corresponding state names for broadcasting
+const WHEEL_JOINT_NAMES = [
+    "base_left_wheel_joint",
+    "base_right_wheel_joint",
+    "base_back_wheel_joint"
+]
+const WHEEL_STATE_NAMES = [
+    "left_wheel_velocity",
+    "right_wheel_velocity",
+    "back_wheel_velocity"
+]
+
+# Build wheel joint -> qvel index map (populated after model is loaded)
+const wheel_qvel_indices = Dict{String, Int}()
+for joint_name in WHEEL_JOINT_NAMES
+    joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), joint_name)
+    if joint_id >= 0
+        # jnt_dofadr is 0-indexed in MuJoCo, +1 for Julia array access
+        qvel_addr = model.jnt_dofadr[joint_id + 1]
+        wheel_qvel_indices[joint_name] = qvel_addr + 1  # Store as 1-indexed for Julia
+    end
+end
+
 """
 Compute wheel velocities for desired body velocity (vx, vy, omega).
 Returns (left, right, back) wheel velocities in rad/s.
@@ -128,9 +151,21 @@ base_ctrl = BaseVelocityController(
     timeout = 0.5       # Seconds before velocities reset to 0
 )
 
-# Get arm joint state using teleop context (returns leader-compatible names)
+# Get joint state: arm joints (leader-compatible names) + wheel velocities (rad/s)
 function get_joint_state(model, data)
-    return get_state_for_leader(teleop_ctx, model, data)
+    # Get arm state in leader-compatible names
+    state = get_state_for_leader(teleop_ctx, model, data)
+
+    # Add wheel velocities (rad/s) from MuJoCo simulation
+    for (i, joint_name) in enumerate(WHEEL_JOINT_NAMES)
+        if haskey(wheel_qvel_indices, joint_name)
+            qvel_idx = wheel_qvel_indices[joint_name]
+            velocity = data.qvel[qvel_idx]  # rad/s
+            state[WHEEL_STATE_NAMES[i]] = velocity
+        end
+    end
+
+    return state
 end
 
 # Apply joint commands (degrees -> radians) with teleop mapping
