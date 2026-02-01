@@ -20,6 +20,14 @@ using MuJoCo.LibMuJoCo
 include("../../src/SceneBuilder.jl")
 include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/capture/Capture.jl")
+include("../../src/RobotTypes.jl")
+include("../../src/Kinematics.jl")
+include("../../src/TeleoperatorMapping.jl")
+include("../../src/CLIUtils.jl")
+
+# --- Teleoperation Configuration ---
+const LeaderType = parse_leader_type(ARGS; default = SO101)
+const FollowerType = SO101
 
 # --- Scene Setup ---
 xml_path = joinpath(
@@ -45,9 +53,9 @@ gripper_camera = BodyCamera(
 gripper_collisions = default_gripper_collisions()
 
 # Build scene with cubes, gripper camera, and collision primitives
-model, data = build_scene(xml_path, cubes,
-    cameras = [gripper_camera],
-    collisions = gripper_collisions)
+model,
+data = build_scene(
+    xml_path, cubes, cameras = [gripper_camera], collisions = gripper_collisions)
 
 # --- Actuator Mapping ---
 actuator_names = [unsafe_string(mj_id2name(model, Int32(LibMuJoCo.mjOBJ_ACTUATOR), i - 1))
@@ -55,31 +63,41 @@ actuator_names = [unsafe_string(mj_id2name(model, Int32(LibMuJoCo.mjOBJ_ACTUATOR
 actuator_map = Dict(name => i for (i, name) in enumerate(actuator_names))
 println("Available actuators: ", actuator_names)
 
+# --- Teleoperator Context ---
+const project_root = joinpath(@__DIR__, "..", "..")
+const teleop_ctx = create_teleop_context(LeaderType, FollowerType, model, data;
+    project_root = project_root)
+println(describe(teleop_ctx))
+
 # --- WebSocket Server (Unified - single port with path-based routing) ---
 server = UnifiedServer(port = 8080, robot = "so101", fps = 30.0)
 
-# Robot-specific: how to get joint state (in degrees)
+# Robot-specific: how to get joint state (in degrees, in LEADER's joint names)
 function get_joint_state(model, data)
-    state = Dict{String, Float64}()
-    for name in actuator_names
-        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
-        if joint_id >= 0
-            addr = model.jnt_qposadr[joint_id + 1] + 1
-            state[name] = rad2deg(data.qpos[addr])
-        end
-    end
-    return state
+    return get_state_for_leader(teleop_ctx, model, data)
 end
 
-# Robot-specific: how to apply joint commands (degrees -> radians)
+# Robot-specific: how to apply joint commands (mapped from leader to follower)
 function apply_joint_command!(data, actuator_map, joints)
-    for (name, val) in joints
-        name_str = String(name)
-        if haskey(actuator_map, name_str)
-            idx = actuator_map[name_str]
-            data.ctrl[idx] = deg2rad(Float64(val))
+    # Convert Any to Float64 Dict
+    joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
+
+    # Map from leader's joint format to follower's
+    mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
+
+    # Apply mapped joints (now in follower's native format)
+    for (name, val) in mapped_joints
+        if haskey(actuator_map, name)
+            idx = actuator_map[name]
+            # Check if this is a prismatic joint (don't convert deg->rad)
+            joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
+            if joint_id >= 0 && model.jnt_type[joint_id + 1] == 2  # mjJNT_SLIDE
+                data.ctrl[idx] = val  # Already in meters
+            else
+                data.ctrl[idx] = deg2rad(val)
+            end
         else
-            @warn "Unknown actuator: $name_str"
+            @warn "Unknown actuator: $name"
         end
     end
 end
@@ -150,16 +168,21 @@ end
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("\n" * "="^60)
+println("\n" * "="^70)
 println("SO101 Robot Arm Simulation")
-println("="^60)
+println("="^70)
+print_teleop_banner(LeaderType, FollowerType, teleop_ctx.strategy)
 println("\nWebSocket Endpoints (all on port 8080):")
 println("  Control:        ws://localhost:8080/so101/control")
 println("  Front camera:   ws://localhost:8080/so101/cameras/front")
 println("  Side camera:    ws://localhost:8080/so101/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/so101/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/so101/cameras/gripper")
-println("="^60)
+println("\nUsage:")
+println("  --leader=so101   (default) Accept SO101 joint names")
+println("  --leader=trossen Accept Trossen joint names (IK mapping)")
+println("  --leader=lekiwi  Accept LeKiwi joint names (name mapping)")
+println("="^70)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,

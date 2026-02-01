@@ -8,12 +8,11 @@
 # - Built-in front and wrist cameras
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
+# - TeleoperatorMapping system for cross-robot compatibility
 #
-# The arm accepts SO101-compatible joint names for cross-robot compatibility:
-#   shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
-#
-# These are mapped internally to LeKiwi's native names:
-#   Rotation, Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Jaw
+# The arm accepts joint names based on the --leader flag:
+#   --leader=so101  (default): shoulder_pan, shoulder_lift, elbow_flex, etc.
+#   --leader=lekiwi: Rotation, Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Jaw
 #
 # Keyboard Controls (mobile base):
 #   W/S - Forward/backward
@@ -23,6 +22,7 @@
 #
 # Usage:
 #   julia --project=. -t 4 examples/lekiwi/websocket_sim.jl
+#   julia --project=. -t 4 examples/lekiwi/websocket_sim.jl --leader=lekiwi
 #
 # Connect with test client:
 #   julia --project=. examples/clients/ws_client.jl
@@ -35,6 +35,10 @@ include("../../src/SceneBuilder.jl")
 include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/BaseController.jl")
 include("../../src/capture/Capture.jl")
+include("../../src/RobotTypes.jl")
+include("../../src/Kinematics.jl")
+include("../../src/TeleoperatorMapping.jl")
+include("../../src/CLIUtils.jl")
 
 # ============================================================================
 # Scene Setup
@@ -68,37 +72,13 @@ actuator_names = [unsafe_string(mj_id2name(model, Int32(LibMuJoCo.mjOBJ_ACTUATOR
 actuator_map = Dict(name => i for (i, name) in enumerate(actuator_names))
 println("Available actuators: ", actuator_names)
 
-# Arm actuator names (native LeKiwi names)
-const ARM_ACTUATORS = ["Rotation", "Pitch", "Elbow", "Wrist_Pitch", "Wrist_Roll", "Jaw"]
-
-# Joint name mapping: SO101-compatible names -> LeKiwi native names
-# This allows clients to use the same joint names across different robots
-const JOINT_NAME_MAP = Dict(
-    # SO101-compatible names -> LeKiwi native names
-    "shoulder_pan" => "Rotation",
-    "shoulder_lift" => "Pitch",
-    "elbow_flex" => "Elbow",
-    "wrist_flex" => "Wrist_Pitch",
-    "wrist_roll" => "Wrist_Roll",
-    "gripper" => "Jaw",
-    # Also accept native LeKiwi names directly
-    "Rotation" => "Rotation",
-    "Pitch" => "Pitch",
-    "Elbow" => "Elbow",
-    "Wrist_Pitch" => "Wrist_Pitch",
-    "Wrist_Roll" => "Wrist_Roll",
-    "Jaw" => "Jaw"
-)
-
-# Reverse mapping for state broadcast (native -> SO101-compatible)
-const JOINT_NAME_REVERSE_MAP = Dict(
-    "Rotation" => "shoulder_pan",
-    "Pitch" => "shoulder_lift",
-    "Elbow" => "elbow_flex",
-    "Wrist_Pitch" => "wrist_flex",
-    "Wrist_Roll" => "wrist_roll",
-    "Jaw" => "gripper"
-)
+# --- Teleoperation Configuration ---
+const LeaderType = parse_leader_type(ARGS; default = SO101)  # Default SO101 for compat
+const FollowerType = LeKiwiArm
+const project_root = joinpath(@__DIR__, "..", "..")
+const teleop_ctx = create_teleop_context(LeaderType, FollowerType, model, data;
+    project_root = project_root)
+println(describe(teleop_ctx))
 
 # ============================================================================
 # Omniwheel Kinematics
@@ -148,38 +128,20 @@ base_ctrl = BaseVelocityController(
     timeout = 0.5       # Seconds before velocities reset to 0
 )
 
-# Get arm joint state (in degrees) using SO101-compatible names
+# Get arm joint state using teleop context (returns leader-compatible names)
 function get_joint_state(model, data)
-    state = Dict{String, Float64}()
-    for native_name in ARM_ACTUATORS
-        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), native_name)
-        if joint_id >= 0
-            addr = model.jnt_qposadr[joint_id + 1] + 1
-            # Use SO101-compatible name in the output
-            compatible_name = JOINT_NAME_REVERSE_MAP[native_name]
-            state[compatible_name] = rad2deg(data.qpos[addr])
-        end
-    end
-    return state
+    return get_state_for_leader(teleop_ctx, model, data)
 end
 
-# Apply joint commands (degrees -> radians) with name mapping
+# Apply joint commands (degrees -> radians) with teleop mapping
 function apply_joint_command!(data, actuator_map, joints)
-    for (name, val) in joints
-        name_str = String(name)
+    joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
+    mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
 
-        # Map to native name if using SO101-compatible name
-        native_name = get(JOINT_NAME_MAP, name_str, nothing)
-        if native_name === nothing
-            @warn "Unknown joint name: $name_str"
-            continue
-        end
-
-        if haskey(actuator_map, native_name)
-            idx = actuator_map[native_name]
-            data.ctrl[idx] = deg2rad(Float64(val))
-        else
-            @warn "Actuator not found: $native_name"
+    for (name, val) in mapped_joints
+        if haskey(actuator_map, name)
+            idx = actuator_map[name]
+            data.ctrl[idx] = deg2rad(val)
         end
     end
 end
@@ -300,18 +262,20 @@ end
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("\n" * "="^60)
+print_teleop_banner(LeaderType, FollowerType, teleop_ctx.strategy)
+println("\nUsage:")
+println("  --leader=so101  (default) Accept SO101 joint names")
+println("  --leader=lekiwi Accept LeKiwi native joint names (Rotation, Pitch, etc.)")
+
+println("\n" * "=" ^ 60)
 println("LeKiwi Mobile Manipulator Simulation")
-println("="^60)
+println("=" ^ 60)
 println("\nWebSocket Endpoints (all on port 8080):")
 println("  Control:           ws://localhost:8080/lekiwi/control")
 println("  Front camera:      ws://localhost:8080/lekiwi/cameras/front")
 println("  Wrist camera:      ws://localhost:8080/lekiwi/cameras/wrist")
 println("  Left side camera:  ws://localhost:8080/lekiwi/cameras/side_left")
 println("  Right side camera: ws://localhost:8080/lekiwi/cameras/side_right")
-println("\nArm Control (via WebSocket):")
-println("  Joint names: shoulder_pan, shoulder_lift, elbow_flex,")
-println("               wrist_flex, wrist_roll, gripper")
 println("\nBase Control (keyboard):")
 println("  W/S - Forward/backward")
 println("  A/D - Rotate left/right")
@@ -319,7 +283,7 @@ println("  Q/E - Strafe left/right")
 println("  Shift - Double speed")
 println("\nBase Control (WebSocket):")
 println("  {\"command\": \"set_base_velocity\", \"vx\": 0.1, \"vy\": 0.0, \"omega\": 0.3}")
-println("="^60)
+println("=" ^ 60)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,

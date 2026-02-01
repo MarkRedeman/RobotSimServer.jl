@@ -526,3 +526,102 @@ function apply_joints!(cache::RobotKinematicsCache, joints::Dict{String, <:Real}
         end
     end
 end
+
+# =============================================================================
+# Shadow Model Helpers for Teleoperation
+# =============================================================================
+
+"""
+    load_shadow_model(xml_path::String) -> (model, data)
+
+Load a MuJoCo model to use as a "shadow" for forward kinematics.
+
+# Arguments
+- `xml_path`: Path to the MJCF XML file
+
+# Returns
+- Tuple of (model, data) ready for FK computations
+"""
+function load_shadow_model(xml_path::String)
+    model = load_model(xml_path)
+    data = init_data(model)
+    return model, data
+end
+
+"""
+    apply_joints_to_model!(data, joint_map::Dict{String,Int}, joints::Dict{String,Float64};
+                           to_radians::Bool=true)
+
+Apply joint positions from a Dict to model data.
+
+# Arguments
+- `data`: MuJoCo data object
+- `joint_map`: Dict mapping joint name -> qpos index
+- `joints`: Dict of joint_name => value
+- `to_radians`: If true, convert degrees to radians (default true)
+
+# Notes
+- Unrecognized joint names are silently ignored
+"""
+function apply_joints_to_model!(data, joint_map::Dict{String, Int},
+        joints::Dict{String, Float64}; to_radians::Bool = true)
+    for (name, val) in joints
+        if haskey(joint_map, name)
+            idx = joint_map[name]
+            data.qpos[idx] = to_radians ? deg2rad(Float64(val)) : Float64(val)
+        end
+    end
+end
+
+"""
+    extract_joint_positions(model, data, joint_names::Vector{String};
+                           to_degrees::Bool=true) -> Dict{String,Float64}
+
+Extract joint positions as a Dict.
+
+# Arguments
+- `model`: MuJoCo model
+- `data`: MuJoCo data
+- `joint_names`: Names of joints to extract
+- `to_degrees`: If true, convert radians to degrees (default true)
+
+# Returns
+- Dict mapping joint names to positions
+"""
+function extract_joint_positions(model, data, joint_names::Vector{String};
+        to_degrees::Bool = true)
+    result = Dict{String, Float64}()
+    for name in joint_names
+        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
+        if joint_id >= 0
+            addr = model.jnt_qposadr[joint_id + 1] + 1
+            val = data.qpos[addr]
+            result[name] = to_degrees ? rad2deg(val) : val
+        end
+    end
+    return result
+end
+
+"""
+    build_joint_map(model, joint_names::Vector{String}) -> Dict{String,Int}
+
+Build a mapping from joint names to qpos indices.
+
+# Arguments
+- `model`: MuJoCo model
+- `joint_names`: Names of joints to include
+
+# Returns
+- Dict mapping joint name to 1-based qpos index
+"""
+function build_joint_map(model, joint_names::Vector{String})
+    joint_map = Dict{String, Int}()
+    for name in joint_names
+        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
+        if joint_id >= 0
+            addr = model.jnt_qposadr[joint_id + 1] + 1
+            joint_map[name] = addr
+        end
+    end
+    return joint_map
+end
