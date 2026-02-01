@@ -41,12 +41,12 @@ struct WebSocketOutput <: OutputBackend
 end
 
 # New constructor - unified server mode (recommended)
-WebSocketOutput(; server) = WebSocketOutput(nothing, server)
+WebSocketOutput(; server) = WebSocketOutput(server.port, server)
 
 # =============================================================================
 # LEGACY: Port-based constructor - remove when all simulations migrated
 # =============================================================================
-WebSocketOutput(; port::Int) = WebSocketOutput(port, nothing)
+#WebSocketOutput(; port::Int) = WebSocketOutput(port, nothing)
 # =============================================================================
 
 """
