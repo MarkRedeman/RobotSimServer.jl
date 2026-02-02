@@ -20,7 +20,15 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 .
 ├── src/                           # Reusable library code
 │   ├── SceneBuilder.jl            # Scene modification utilities
+│   ├── RobotTypes.jl              # Robot type definitions and joint mappings
+│   ├── TeleoperatorMapping.jl     # Cross-robot teleoperation support
 │   ├── WebSocketServer.jl         # Shared WebSocket control server
+│   ├── HeadlessRenderer.jl        # Offscreen OpenGL rendering
+│   ├── SimulationInstance.jl      # Single robot simulation encapsulation
+│   ├── SimulationManager.jl       # Multi-robot orchestration
+│   ├── RobotConfigs.jl            # Robot configuration factories
+│   ├── AssetServer.jl             # HTTP serving for URDF/meshes
+│   ├── URDFGenerator.jl           # MJCF to URDF conversion
 │   └── capture/                   # Multi-camera capture system
 │       ├── Capture.jl             # Main capture module
 │       ├── types.jl               # Type definitions
@@ -32,6 +40,7 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 │   ├── so101/                     # SO101 robot examples
 │   ├── trossen/                   # Trossen WXAI examples
 │   ├── franka/                    # Franka Panda examples
+│   ├── lekiwi/                    # LeKiwi mobile robot examples
 │   ├── fanuc/                     # Fanuc industrial robot examples
 │   └── clients/                   # Test client examples
 │
@@ -44,6 +53,7 @@ to collect teleoperation data, train VLA models, and deploy to robots.
 ├── .github/workflows/             # CI/CD configuration
 │   └── CI.yml                     # Format check + syntax validation
 │
+├── unified_server.jl              # Unified multi-robot server entry point
 ├── Project.toml                   # Julia dependencies
 ├── Manifest.toml                  # Locked dependency versions
 ├── mise.toml                      # Mise configuration (tools, env, tasks)
@@ -110,10 +120,14 @@ mise trust && mise install
 # Install dependencies and MuJoCo visualizer
 mise run setup
 
-# Run simulations
+# Run unified multi-robot server (recommended)
+mise run server              # Starts server on port 8080
+
+# Run individual simulations
 mise run so101              # SO101 with WebSocket control
 mise run trossen            # Trossen WXAI with WebSocket control
 mise run franka             # Franka Panda with WebSocket control
+mise run lekiwi             # LeKiwi mobile robot
 mise run so101-basic        # SO101 basic demo
 mise run trossen-basic      # Trossen basic demo
 mise run franka-basic       # Franka Panda basic demo
@@ -223,9 +237,23 @@ git add -A && git commit -m "style: format Julia code"
 
 ## WebSocket API Reference
 
-### Control Endpoint
+### Unified Server (Recommended)
 
-**URL:** `ws://localhost:8081`
+**Control Endpoint:** `ws://localhost:8080/{robot}/control?leader=X`
+
+Where `{robot}` is one of: `so101`, `lekiwi`, `trossen`, `franka`, `fanuc/m10ia`, etc.
+
+**Camera Streams:** `ws://localhost:8080/{robot}/cameras/{camera_name}`
+
+**HTTP Endpoints:**
+- `GET /` - Info page
+- `GET /robots` - JSON list of available robots
+- `GET /{robot}/urdf` - Robot URDF file
+- `GET /{robot}/meshes/{path}` - Mesh files
+
+### Individual Examples
+
+**Control Endpoint:** `ws://localhost:8081`
 
 ### Commands (Client → Server)
 
@@ -271,6 +299,19 @@ git add -A && git commit -m "style: format Julia code"
 
 ### Camera Streams
 
+**Unified Server:** `ws://localhost:8080/{robot}/cameras/{camera_name}`
+
+Available cameras per robot:
+| Robot | Cameras |
+|-------|---------|
+| so101 | front, side, orbit, gripper |
+| lekiwi | front, wrist, side_left, side_right |
+| trossen | front, side, orbit, gripper |
+| franka | front, side, orbit, gripper, wrist |
+| fanuc/* | front, side, orbit, gripper |
+
+**Individual Examples (separate ports):**
+
 | Camera | Port | Description |
 |--------|------|-------------|
 | Front | 8082 | External front view |
@@ -290,6 +331,9 @@ git add -A && git commit -m "style: format Julia code"
 - **JSON.jl** - JSON parsing
 - **ZMQ.jl** - ZeroMQ bindings
 - **Images.jl** / **ImageIO.jl** / **FileIO.jl** - Image processing
+- **EzXML.jl** - XML parsing (for URDF generation)
+- **SHA.jl** - Hashing (for URDF caching)
+- **GLFW.jl** - OpenGL context (for headless rendering)
 
 ### Development Dependencies
 
@@ -326,3 +370,6 @@ git submodule update --init --recursive
 3. **Use `@__DIR__` for relative paths** - scripts can be run from any directory.
 4. **Include statements use relative paths** from the script location.
 5. **Test examples with `-t 4`** for multi-threading when WebSocket is involved.
+6. **Prefer unified server** - `mise run server` is the recommended way to run simulations.
+7. **Robot configs are in RobotConfigs.jl** - add new robots there for unified server support.
+8. **Headless rendering** - SimulationInstance uses HeadlessRenderer for camera capture.
