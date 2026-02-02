@@ -426,6 +426,53 @@ function extract_mesh_assets(
 end
 
 # =============================================================================
+# Material Extraction
+# =============================================================================
+
+"""
+    MaterialInfo
+
+Information about a material defined in MJCF.
+Only color-based materials are supported; texture-based materials are skipped.
+"""
+struct MaterialInfo
+    name::String
+    rgba::String  # "R G B A" color values
+end
+
+"""
+    extract_materials(doc::EzXML.Document) -> Dict{String, MaterialInfo}
+
+Extract material definitions from MJCF document.
+Returns a dictionary mapping material names to their RGBA colors.
+
+Only extracts color-based materials (those with rgba attribute).
+Texture-based materials are skipped as URDF texture support varies by viewer.
+"""
+function extract_materials(doc::EzXML.Document)
+    materials = Dict{String, MaterialInfo}()
+    root = EzXML.root(doc)
+
+    # Find all asset sections
+    for asset_node in EzXML.findall("//asset", root)
+        for mat_node in EzXML.eachelement(asset_node)
+            if EzXML.nodename(mat_node) == "material"
+                name = get_attr(mat_node, "name", "")
+                rgba = get_attr(mat_node, "rgba", "")
+                texture = get_attr(mat_node, "texture", "")
+
+                # Only include color-based materials (skip texture-based)
+                if !isempty(name) && !isempty(rgba) && isempty(texture)
+                    materials[name] = MaterialInfo(name, rgba)
+                end
+            end
+        end
+    end
+
+    return materials
+end
+
+# =============================================================================
 # Default Class Handling
 # =============================================================================
 
@@ -442,12 +489,13 @@ struct GeomDefaults
     euler::String
     quat::String
     rgba::String
+    material::String  # Material name reference
     contype::String
     conaffinity::String
 end
 
 function GeomDefaults()
-    return GeomDefaults("sphere", "", "", "0 0 0", "", "1 0 0 0", "", "1", "1")
+    return GeomDefaults("sphere", "", "", "0 0 0", "", "1 0 0 0", "", "", "1", "1")
 end
 
 """
@@ -489,6 +537,7 @@ function _extract_defaults_recursive!(
                 _get_or_default(child, "euler", parent_defaults.euler),
                 _get_or_default(child, "quat", parent_defaults.quat),
                 _get_or_default(child, "rgba", parent_defaults.rgba),
+                _get_or_default(child, "material", parent_defaults.material),
                 _get_or_default(child, "contype", parent_defaults.contype),
                 _get_or_default(child, "conaffinity", parent_defaults.conaffinity)
             )
@@ -538,6 +587,7 @@ function apply_geom_defaults(geom::EzXML.Node, defaults::Dict{String, GeomDefaul
         euler = _get_or_default(geom, "euler", base.euler),
         quat = _get_or_default(geom, "quat", base.quat),
         rgba = _get_or_default(geom, "rgba", base.rgba),
+        material = _get_or_default(geom, "material", base.material),
         contype = _get_or_default(geom, "contype", base.contype),
         conaffinity = _get_or_default(geom, "conaffinity", base.conaffinity)
     )
@@ -559,6 +609,7 @@ mutable struct URDFBuilder
     link_names::Set{String}
     joint_names::Set{String}
     meshes::Dict{String, MeshInfo}
+    materials::Dict{String, MaterialInfo}
     defaults::Dict{String, GeomDefaults}
     base_dir::String
     warnings::Vector{String}
@@ -568,6 +619,7 @@ end
 function URDFBuilder(
         robot_name::String,
         meshes::Dict{String, MeshInfo},
+        materials::Dict{String, MaterialInfo},
         defaults::Dict{String, GeomDefaults},
         base_dir::String,
         eulerseq::String = "xyz"
@@ -579,6 +631,7 @@ function URDFBuilder(
         Set{String}(),
         Set{String}(),
         meshes,
+        materials,
         defaults,
         base_dir,
         String[],
@@ -820,7 +873,19 @@ function generate_geometry_urdf!(
 
     # Material (only for visual)
     if geom_type == "visual"
-        rgba_str = !isempty(props.rgba) ? props.rgba : ""
+        # Try to get rgba color: first from explicit rgba, then from material reference
+        rgba_str = ""
+
+        if !isempty(props.rgba)
+            # Direct rgba attribute on geom
+            rgba_str = props.rgba
+        elseif !isempty(props.material)
+            # Look up material by name
+            if haskey(builder.materials, props.material)
+                rgba_str = builder.materials[props.material].rgba
+            end
+        end
+
         if !isempty(rgba_str)
             parts = split(strip(rgba_str))
             if length(parts) >= 4
@@ -1070,6 +1135,9 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     # Extract mesh assets with project root for path resolution
     meshes = extract_mesh_assets(doc, base_dir, abs_project_root)
 
+    # Extract material definitions for color support
+    materials = extract_materials(doc)
+
     # Extract default classes for geom property inheritance
     defaults = extract_default_classes(doc)
 
@@ -1086,7 +1154,7 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     end
 
     # Create builder
-    builder = URDFBuilder(robot_name, meshes, defaults, base_dir, eulerseq)
+    builder = URDFBuilder(robot_name, meshes, materials, defaults, base_dir, eulerseq)
 
     # Start URDF document
     emit!(builder, "<?xml version=\"1.0\"?>")
