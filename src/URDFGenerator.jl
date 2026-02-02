@@ -141,6 +141,101 @@ function quat_to_rpy(quat::Vector{Float64})
     return [roll, pitch, yaw]
 end
 
+# Rotation matrix constructors for euler angle conversion
+function _rotx(a::Float64)
+    c, s = cos(a), sin(a)
+    return [1.0 0.0 0.0; 0.0 c -s; 0.0 s c]
+end
+
+function _roty(a::Float64)
+    c, s = cos(a), sin(a)
+    return [c 0.0 s; 0.0 1.0 0.0; -s 0.0 c]
+end
+
+function _rotz(a::Float64)
+    c, s = cos(a), sin(a)
+    return [c -s 0.0; s c 0.0; 0.0 0.0 1.0]
+end
+
+"""
+    intrinsic_xyz_to_matrix(a::Float64, b::Float64, c::Float64) -> Matrix{Float64}
+
+Build rotation matrix from intrinsic XYZ euler angles.
+Intrinsic XYZ means: rotate around X, then around the NEW Y, then around the NEW Z.
+"""
+function intrinsic_xyz_to_matrix(a::Float64, b::Float64, c::Float64)
+    return _rotx(a) * _roty(b) * _rotz(c)
+end
+
+"""
+    intrinsic_zyx_to_matrix(a::Float64, b::Float64, c::Float64) -> Matrix{Float64}
+
+Build rotation matrix from intrinsic ZYX euler angles.
+"""
+function intrinsic_zyx_to_matrix(a::Float64, b::Float64, c::Float64)
+    return _rotz(a) * _roty(b) * _rotx(c)
+end
+
+"""
+    matrix_to_extrinsic_xyz(R::Matrix{Float64}) -> Vector{Float64}
+
+Extract extrinsic XYZ euler angles (URDF rpy) from a rotation matrix.
+URDF convention: R = Rz(yaw) * Ry(pitch) * Rx(roll)
+"""
+function matrix_to_extrinsic_xyz(R::Matrix{Float64})
+    # Extract roll, pitch, yaw from R = Rz(yaw) * Ry(pitch) * Rx(roll)
+    sy = -R[3, 1]
+    if abs(sy) >= 1.0
+        # Gimbal lock
+        pitch = copysign(π / 2, sy)
+        roll = 0.0
+        yaw = atan(R[1, 2], R[1, 3])
+    else
+        pitch = asin(sy)
+        roll = atan(R[3, 2], R[3, 3])
+        yaw = atan(R[2, 1], R[1, 1])
+    end
+    return [roll, pitch, yaw]
+end
+
+"""
+    convert_mjcf_euler_to_urdf_rpy(euler::Vector{Float64}, eulerseq::String) -> Vector{Float64}
+
+Convert MJCF euler angles to URDF roll-pitch-yaw (extrinsic XYZ).
+
+MJCF default eulerseq is "xyz" (lowercase = intrinsic/body-fixed rotations).
+URDF rpy is extrinsic XYZ (fixed-axis rotations).
+
+The conversion builds a rotation matrix from the MJCF euler angles, then extracts
+the equivalent extrinsic XYZ angles for URDF.
+"""
+function convert_mjcf_euler_to_urdf_rpy(euler::Vector{Float64}, eulerseq::String)
+    seq = lowercase(eulerseq)
+
+    if seq == "xyz"
+        # Intrinsic xyz -> build rotation matrix -> extract extrinsic XYZ
+        R = intrinsic_xyz_to_matrix(euler[1], euler[2], euler[3])
+        return matrix_to_extrinsic_xyz(R)
+    elseif seq == "zyx"
+        # Intrinsic zyx -> build rotation matrix -> extract extrinsic XYZ
+        R = intrinsic_zyx_to_matrix(euler[1], euler[2], euler[3])
+        return matrix_to_extrinsic_xyz(R)
+    else
+        # For uppercase (extrinsic) sequences, handle common cases
+        if eulerseq == "XYZ"
+            # Already extrinsic XYZ, same as URDF rpy
+            return euler
+        elseif eulerseq == "ZYX"
+            # Extrinsic ZYX -> build matrix -> extract extrinsic XYZ
+            R = _rotx(euler[3]) * _roty(euler[2]) * _rotz(euler[1])
+            return matrix_to_extrinsic_xyz(R)
+        else
+            @warn "Unsupported eulerseq '$eulerseq', using euler values directly"
+            return euler
+        end
+    end
+end
+
 """
     format_vec3(v::Vector{Float64}) -> String
 
@@ -467,13 +562,15 @@ mutable struct URDFBuilder
     defaults::Dict{String, GeomDefaults}
     base_dir::String
     warnings::Vector{String}
+    eulerseq::String  # Euler angle sequence from MJCF compiler (default: "xyz")
 end
 
 function URDFBuilder(
         robot_name::String,
         meshes::Dict{String, MeshInfo},
         defaults::Dict{String, GeomDefaults},
-        base_dir::String
+        base_dir::String,
+        eulerseq::String = "xyz"
 )
     return URDFBuilder(
         IOBuffer(),
@@ -484,7 +581,8 @@ function URDFBuilder(
         meshes,
         defaults,
         base_dir,
-        String[]
+        String[],
+        eulerseq
     )
 end
 
@@ -871,10 +969,11 @@ function process_body_recursive!(
     body_pos = parse_vec3(get_attr(body, "pos", "0 0 0"))
 
     # Check for euler first (more common in MJCF), then fall back to quat
-    # MJCF euler is already in radians and represents roll-pitch-yaw
+    # Convert MJCF euler angles to URDF rpy based on the eulerseq convention
     body_euler_str = get_attr(body, "euler", "")
     if !isempty(body_euler_str)
-        body_rpy = parse_vec3(body_euler_str, [0.0, 0.0, 0.0])
+        euler_angles = parse_vec3(body_euler_str, [0.0, 0.0, 0.0])
+        body_rpy = convert_mjcf_euler_to_urdf_rpy(euler_angles, builder.eulerseq)
     else
         body_quat = parse_quat(get_attr(body, "quat", "1 0 0 0"))
         body_rpy = quat_to_rpy(body_quat)
@@ -974,8 +1073,20 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     # Extract default classes for geom property inheritance
     defaults = extract_default_classes(doc)
 
+    # Extract compiler settings for euler angle convention
+    # MJCF default eulerseq is "xyz" (intrinsic rotations)
+    compiler_nodes = EzXML.findall("//compiler", root)
+    eulerseq = "xyz"  # MJCF default
+    for compiler in compiler_nodes
+        seq = get_attr(compiler, "eulerseq", "")
+        if !isempty(seq)
+            eulerseq = seq
+            break
+        end
+    end
+
     # Create builder
-    builder = URDFBuilder(robot_name, meshes, defaults, base_dir)
+    builder = URDFBuilder(robot_name, meshes, defaults, base_dir, eulerseq)
 
     # Start URDF document
     emit!(builder, "<?xml version=\"1.0\"?>")
