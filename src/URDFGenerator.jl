@@ -331,6 +331,124 @@ function extract_mesh_assets(
 end
 
 # =============================================================================
+# Default Class Handling
+# =============================================================================
+
+"""
+    GeomDefaults
+
+Default properties for a geom class, extracted from MJCF <default> elements.
+"""
+struct GeomDefaults
+    type::String
+    mesh::String
+    size::String
+    pos::String
+    euler::String
+    quat::String
+    rgba::String
+    contype::String
+    conaffinity::String
+end
+
+function GeomDefaults()
+    return GeomDefaults("sphere", "", "", "0 0 0", "", "1 0 0 0", "", "1", "1")
+end
+
+"""
+    extract_default_classes(doc::EzXML.Document) -> Dict{String, GeomDefaults}
+
+Extract default class definitions from MJCF document.
+Returns a dictionary mapping class names to their default geom properties.
+"""
+function extract_default_classes(doc::EzXML.Document)
+    defaults = Dict{String, GeomDefaults}()
+    root = EzXML.root(doc)
+
+    # Find all default sections and process recursively
+    for default_section in EzXML.findall("//default", root)
+        _extract_defaults_recursive!(defaults, default_section, GeomDefaults())
+    end
+
+    return defaults
+end
+
+function _extract_defaults_recursive!(
+        defaults::Dict{String, GeomDefaults},
+        node::EzXML.Node,
+        parent_defaults::GeomDefaults
+)
+    # Check if this default element has a class attribute
+    class_name = get_attr(node, "class", "")
+
+    # Look for geom child to get geom defaults
+    current_defaults = parent_defaults
+    for child in EzXML.eachelement(node)
+        if EzXML.nodename(child) == "geom"
+            # Merge geom attributes with parent defaults
+            current_defaults = GeomDefaults(
+                _get_or_default(child, "type", parent_defaults.type),
+                _get_or_default(child, "mesh", parent_defaults.mesh),
+                _get_or_default(child, "size", parent_defaults.size),
+                _get_or_default(child, "pos", parent_defaults.pos),
+                _get_or_default(child, "euler", parent_defaults.euler),
+                _get_or_default(child, "quat", parent_defaults.quat),
+                _get_or_default(child, "rgba", parent_defaults.rgba),
+                _get_or_default(child, "contype", parent_defaults.contype),
+                _get_or_default(child, "conaffinity", parent_defaults.conaffinity)
+            )
+            break
+        end
+    end
+
+    # Store defaults if this has a class name
+    if !isempty(class_name)
+        defaults[class_name] = current_defaults
+    end
+
+    # Process nested default elements
+    for child in EzXML.eachelement(node)
+        if EzXML.nodename(child) == "default"
+            _extract_defaults_recursive!(defaults, child, current_defaults)
+        end
+    end
+end
+
+function _get_or_default(node::EzXML.Node, attr::String, default::String)
+    val = get_attr(node, attr, "")
+    return isempty(val) ? default : val
+end
+
+"""
+    apply_geom_defaults(geom::EzXML.Node, defaults::Dict{String, GeomDefaults}) -> NamedTuple
+
+Get effective geom properties by merging with class defaults.
+Returns a named tuple with all relevant properties.
+"""
+function apply_geom_defaults(geom::EzXML.Node, defaults::Dict{String, GeomDefaults})
+    class_name = get_attr(geom, "class", "")
+
+    # Start with base defaults
+    base = GeomDefaults()
+    if haskey(defaults, class_name)
+        base = defaults[class_name]
+    end
+
+    # Override with explicit attributes on the geom
+    return (
+        type = _get_or_default(geom, "type", base.type),
+        mesh = _get_or_default(geom, "mesh", base.mesh),
+        size = _get_or_default(geom, "size", base.size),
+        pos = _get_or_default(geom, "pos", base.pos),
+        euler = _get_or_default(geom, "euler", base.euler),
+        quat = _get_or_default(geom, "quat", base.quat),
+        rgba = _get_or_default(geom, "rgba", base.rgba),
+        contype = _get_or_default(geom, "contype", base.contype),
+        conaffinity = _get_or_default(geom, "conaffinity", base.conaffinity)
+    )
+end
+
+# =============================================================================
 # URDF Generation
 # =============================================================================
 
@@ -346,11 +464,17 @@ mutable struct URDFBuilder
     link_names::Set{String}
     joint_names::Set{String}
     meshes::Dict{String, MeshInfo}
+    defaults::Dict{String, GeomDefaults}
     base_dir::String
     warnings::Vector{String}
 end
 
-function URDFBuilder(robot_name::String, meshes::Dict{String, MeshInfo}, base_dir::String)
+function URDFBuilder(
+        robot_name::String,
+        meshes::Dict{String, MeshInfo},
+        defaults::Dict{String, GeomDefaults},
+        base_dir::String
+)
     return URDFBuilder(
         IOBuffer(),
         0,
@@ -358,6 +482,7 @@ function URDFBuilder(robot_name::String, meshes::Dict{String, MeshInfo}, base_di
         Set{String}(),
         Set{String}(),
         meshes,
+        defaults,
         base_dir,
         String[]
     )
@@ -479,22 +604,22 @@ function generate_geometry_urdf!(
         geom_type::String,
         index::Int
 )
-    mjcf_type = get_attr(geom, "type", "sphere")
+    # Apply defaults from class if present
+    props = apply_geom_defaults(geom, builder.defaults)
+    mjcf_type = props.type
 
     # Skip geoms with contype="0" conaffinity="0" for collision
     # (these are visual-only in MuJoCo)
     if geom_type == "collision"
-        contype = get_attr(geom, "contype", "1")
-        conaffinity = get_attr(geom, "conaffinity", "1")
-        if contype == "0" && conaffinity == "0"
+        if props.contype == "0" && props.conaffinity == "0"
             return false
         end
     end
 
-    # Skip visual geoms for collision processing
+    # Skip collision-only geoms for visual processing
     if geom_type == "visual"
         geom_class = get_attr(geom, "class", "")
-        # For visual type, include visual class geoms or geoms without class
+        # For visual type, skip if class name contains "collision" but not "visual"
         if occursin("collision", lowercase(geom_class)) &&
            !occursin("visual", lowercase(geom_class))
             return false
@@ -508,18 +633,24 @@ function generate_geometry_urdf!(
     emit!(builder, "<$(geom_type)$(element_name)>")
     builder.indent_level += 1
 
-    # Origin
-    pos = parse_vec3(get_attr(geom, "pos", "0 0 0"))
-    quat = parse_quat(get_attr(geom, "quat", "1 0 0 0"))
-    rpy = quat_to_rpy(quat)
-    emit!(builder, "<origin xyz=\"$(format_vec3(pos))\" rpy=\"$(format_vec3(rpy))\"/>")
+    # Origin - prefer euler if present, otherwise use quat
+    pos = parse_vec3(props.pos, [0.0, 0.0, 0.0])
+    if !isempty(props.euler)
+        # MJCF euler is in radians
+        euler = parse_vec3(props.euler, [0.0, 0.0, 0.0])
+        emit!(builder, "<origin xyz=\"$(format_vec3(pos))\" rpy=\"$(format_vec3(euler))\"/>")
+    else
+        quat = parse_quat(props.quat)
+        rpy = quat_to_rpy(quat)
+        emit!(builder, "<origin xyz=\"$(format_vec3(pos))\" rpy=\"$(format_vec3(rpy))\"/>")
+    end
 
     # Geometry
     emit!(builder, "<geometry>")
     builder.indent_level += 1
 
     if mjcf_type == "mesh"
-        mesh_name = get_attr(geom, "mesh", "")
+        mesh_name = props.mesh
         if haskey(builder.meshes, mesh_name)
             mesh_info = builder.meshes[mesh_name]
             # Use meshes/ prefix for URL routing via the asset server
@@ -538,13 +669,13 @@ function generate_geometry_urdf!(
             emit!(builder, "<sphere radius=\"0.01\"/>")
         end
     elseif mjcf_type == "box"
-        size_str = get_attr(geom, "size", "0.01 0.01 0.01")
+        size_str = !isempty(props.size) ? props.size : "0.01 0.01 0.01"
         size = parse_vec3(size_str, [0.01, 0.01, 0.01])
         # MJCF size is half-extents, URDF is full size
         full_size = size .* 2.0
         emit!(builder, "<box size=\"$(format_vec3(full_size))\"/>")
     elseif mjcf_type == "sphere"
-        size_str = get_attr(geom, "size", "0.01")
+        size_str = !isempty(props.size) ? props.size : "0.01"
         parts = split(strip(size_str))
         radius = length(parts) >= 1 ? tryparse(Float64, parts[1]) : 0.01
         if radius === nothing
@@ -552,7 +683,7 @@ function generate_geometry_urdf!(
         end
         emit!(builder, "<sphere radius=\"$(radius)\"/>")
     elseif mjcf_type == "cylinder"
-        size_str = get_attr(geom, "size", "0.01 0.01")
+        size_str = !isempty(props.size) ? props.size : "0.01 0.01"
         parts = split(strip(size_str))
         radius = length(parts) >= 1 ? tryparse(Float64, parts[1]) : 0.01
         half_length = length(parts) >= 2 ? tryparse(Float64, parts[2]) : 0.01
@@ -565,7 +696,7 @@ function generate_geometry_urdf!(
         emit!(builder, "<cylinder radius=\"$(radius)\" length=\"$(half_length * 2)\"/>")
     elseif mjcf_type == "capsule"
         # URDF doesn't have capsule, approximate with cylinder
-        size_str = get_attr(geom, "size", "0.01 0.01")
+        size_str = !isempty(props.size) ? props.size : "0.01 0.01"
         parts = split(strip(size_str))
         radius = length(parts) >= 1 ? tryparse(Float64, parts[1]) : 0.01
         half_length = length(parts) >= 2 ? tryparse(Float64, parts[2]) : 0.01
@@ -591,7 +722,7 @@ function generate_geometry_urdf!(
 
     # Material (only for visual)
     if geom_type == "visual"
-        rgba_str = get_attr(geom, "rgba", "")
+        rgba_str = !isempty(props.rgba) ? props.rgba : ""
         if !isempty(rgba_str)
             parts = split(strip(rgba_str))
             if length(parts) >= 4
@@ -799,6 +930,7 @@ Convert a MuJoCo XML (MJCF) file to URDF format.
 
 # Notes
 - Resolves <include> directives recursively
+- Resolves default class attributes for geoms
 - Converts body hierarchy to link/joint structure
 - Maps MuJoCo joint types to URDF equivalents
 - Mesh paths are converted to URL-friendly paths with meshes/ prefix
@@ -832,8 +964,11 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     # Extract mesh assets with project root for path resolution
     meshes = extract_mesh_assets(doc, base_dir, abs_project_root)
 
+    # Extract default classes for geom property inheritance
+    defaults = extract_default_classes(doc)
+
     # Create builder
-    builder = URDFBuilder(robot_name, meshes, base_dir)
+    builder = URDFBuilder(robot_name, meshes, defaults, base_dir)
 
     # Start URDF document
     emit!(builder, "<?xml version=\"1.0\"?>")
