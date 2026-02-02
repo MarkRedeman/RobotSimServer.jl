@@ -744,7 +744,7 @@ end
 """
     generate_joint_urdf!(builder::URDFBuilder, joint::EzXML.Node, 
                          parent_link::String, child_link::String,
-                         body_pos::Vector{Float64}, body_quat::Vector{Float64})
+                         body_pos::Vector{Float64}, body_rpy::Vector{Float64})
 
 Generate URDF <joint> element from MJCF joint.
 """
@@ -754,7 +754,7 @@ function generate_joint_urdf!(
         parent_link::String,
         child_link::String,
         body_pos::Vector{Float64},
-        body_quat::Vector{Float64}
+        body_rpy::Vector{Float64}
 )
     joint_name = get_attr(joint, "name", "joint_$(length(builder.joint_names))")
 
@@ -777,9 +777,8 @@ function generate_joint_urdf!(
     emit!(builder, "<parent link=\"$(parent_link)\"/>")
     emit!(builder, "<child link=\"$(child_link)\"/>")
 
-    # Origin (from body pos/quat, as joint is defined within body)
-    rpy = quat_to_rpy(body_quat)
-    emit!(builder, "<origin xyz=\"$(format_vec3(body_pos))\" rpy=\"$(format_vec3(rpy))\"/>")
+    # Origin (from body pos/rpy, as joint is defined within body)
+    emit!(builder, "<origin xyz=\"$(format_vec3(body_pos))\" rpy=\"$(format_vec3(body_rpy))\"/>")
 
     # Axis
     axis_str = get_attr(joint, "axis", "0 0 1")
@@ -822,7 +821,7 @@ end
 """
     generate_fixed_joint_urdf!(builder::URDFBuilder, parent_link::String, 
                                 child_link::String, pos::Vector{Float64}, 
-                                quat::Vector{Float64})
+                                rpy::Vector{Float64})
 
 Generate a fixed joint between parent and child links.
 Used when a body has no explicit joint.
@@ -832,7 +831,7 @@ function generate_fixed_joint_urdf!(
         parent_link::String,
         child_link::String,
         pos::Vector{Float64},
-        quat::Vector{Float64}
+        rpy::Vector{Float64}
 )
     joint_name = "$(child_link)_fixed_joint"
 
@@ -851,7 +850,6 @@ function generate_fixed_joint_urdf!(
     emit!(builder, "<parent link=\"$(parent_link)\"/>")
     emit!(builder, "<child link=\"$(child_link)\"/>")
 
-    rpy = quat_to_rpy(quat)
     emit!(builder, "<origin xyz=\"$(format_vec3(pos))\" rpy=\"$(format_vec3(rpy))\"/>")
 
     builder.indent_level -= 1
@@ -871,7 +869,16 @@ function process_body_recursive!(
 )
     body_name = get_attr(body, "name", "link_$(length(builder.link_names))")
     body_pos = parse_vec3(get_attr(body, "pos", "0 0 0"))
-    body_quat = parse_quat(get_attr(body, "quat", "1 0 0 0"))
+
+    # Check for euler first (more common in MJCF), then fall back to quat
+    # MJCF euler is already in radians and represents roll-pitch-yaw
+    body_euler_str = get_attr(body, "euler", "")
+    if !isempty(body_euler_str)
+        body_rpy = parse_vec3(body_euler_str, [0.0, 0.0, 0.0])
+    else
+        body_quat = parse_quat(get_attr(body, "quat", "1 0 0 0"))
+        body_rpy = quat_to_rpy(body_quat)
+    end
 
     # Collect geoms and inertial
     geoms = EzXML.Node[]
@@ -899,7 +906,7 @@ function process_body_recursive!(
     # Generate joint(s)
     if isempty(joints)
         # No explicit joint - create fixed joint
-        generate_fixed_joint_urdf!(builder, parent_link, link_name, body_pos, body_quat)
+        generate_fixed_joint_urdf!(builder, parent_link, link_name, body_pos, body_rpy)
     else
         # Generate a joint for the first joint definition
         # URDF only supports one joint per link pair
@@ -908,7 +915,7 @@ function process_body_recursive!(
                 "Body '$(body_name)' has $(length(joints)) joints, only first will be used")
         end
         generate_joint_urdf!(
-            builder, joints[1], parent_link, link_name, body_pos, body_quat)
+            builder, joints[1], parent_link, link_name, body_pos, body_rpy)
     end
 
     # Process child bodies recursively
