@@ -525,7 +525,14 @@ function generate_geometry_urdf!(
             # Use meshes/ prefix for URL routing via the asset server
             # The resolved_file is relative to project root
             mesh_path = "meshes/" * mesh_info.resolved_file
-            emit!(builder, "<mesh filename=\"$(mesh_path)\"/>")
+            # Include scale if it's not identity (1, 1, 1)
+            scale = mesh_info.scale
+            if scale ≈ [1.0, 1.0, 1.0]
+                emit!(builder, "<mesh filename=\"$(mesh_path)\"/>")
+            else
+                emit!(builder,
+                    "<mesh filename=\"$(mesh_path)\" scale=\"$(format_vec3(scale))\"/>")
+            end
         else
             add_warning!(builder, "Mesh not found: $(mesh_name)")
             emit!(builder, "<sphere radius=\"0.01\"/>")
