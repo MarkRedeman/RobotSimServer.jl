@@ -26,8 +26,22 @@ include("../../src/TeleoperatorMapping.jl")
 include("../../src/CLIUtils.jl")
 
 # --- Teleoperation Configuration ---
-const LeaderType = parse_leader_type(ARGS; default = SO101)
+const DefaultLeaderType = parse_leader_type(ARGS; default = SO101)
 const FollowerType = SO101
+
+# Create a context factory for per-client teleop contexts
+function create_client_context(leader_type)
+    resolved_type = if leader_type isa Type
+        leader_type
+    elseif leader_type isa AbstractString
+        get(ROBOT_TYPE_MAP, lowercase(leader_type), DefaultLeaderType)
+    else
+        DefaultLeaderType
+    end
+    println("Created teleop context: $(resolved_type) → $(FollowerType)")
+    return create_teleop_context(resolved_type, FollowerType, model, data;
+        project_root = project_root)
+end
 
 # --- Scene Setup ---
 xml_path = joinpath(
@@ -65,20 +79,27 @@ println("Available actuators: ", actuator_names)
 
 # --- Teleoperator Context ---
 const project_root = joinpath(@__DIR__, "..", "..")
-const teleop_ctx = create_teleop_context(LeaderType, FollowerType, model, data;
+const default_teleop_ctx = create_teleop_context(
+    DefaultLeaderType, FollowerType, model, data;
     project_root = project_root)
-println(describe(teleop_ctx))
+println(describe(default_teleop_ctx))
 
 # --- WebSocket Server (Unified - single port with path-based routing) ---
 server = UnifiedServer(port = 8080, robot = "so101", fps = 30.0)
 
+# Enable per-client leader types via ?leader=X query parameter
+set_context_factory!(server, create_client_context, DefaultLeaderType)
+
 # Robot-specific: how to get joint state (in degrees, in LEADER's joint names)
-function get_joint_state(model, data)
+function get_joint_state(model, data, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
     return get_state_for_leader(teleop_ctx, model, data)
 end
 
 # Robot-specific: how to apply joint commands (mapped from leader to follower)
-function apply_joint_command!(data, actuator_map, joints)
+function apply_joint_command!(data, actuator_map, joints, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+
     # Convert Any to Float64 Dict
     joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
 
@@ -171,17 +192,17 @@ init_visualiser()
 println("\n" * "="^70)
 println("SO101 Robot Arm Simulation")
 println("="^70)
-print_teleop_banner(LeaderType, FollowerType, teleop_ctx.strategy)
+print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
 println("\nWebSocket Endpoints (all on port 8080):")
 println("  Control:        ws://localhost:8080/so101/control")
+println("  Control:        ws://localhost:8080/so101/control?leader=<type>")
 println("  Front camera:   ws://localhost:8080/so101/cameras/front")
 println("  Side camera:    ws://localhost:8080/so101/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/so101/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/so101/cameras/gripper")
-println("\nUsage:")
-println("  --leader=so101   (default) Accept SO101 joint names")
-println("  --leader=trossen Accept Trossen joint names (IK mapping)")
-println("  --leader=lekiwi  Accept LeKiwi joint names (name mapping)")
+println("\nPer-client leader type support:")
+println("  Default (CLI):     --leader=so101")
+println("  Per-connection:    ?leader=so101, ?leader=trossen, ?leader=lekiwi")
 println("="^70)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 

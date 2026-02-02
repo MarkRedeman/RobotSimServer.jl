@@ -4,7 +4,14 @@
 # streaming on a single port using URL path routing:
 #
 #   ws://localhost:8080/{robot}/control          - Robot control commands
+#   ws://localhost:8080/{robot}/control?leader=X - Control with specific leader type
 #   ws://localhost:8080/{robot}/cameras/{name}   - Camera JPEG streams
+#
+# Per-Client Leader Types:
+#   Each control client can specify their own leader type via query parameter.
+#   This enables different clients to use different joint naming conventions:
+#     - Client A: ws://...?leader=so101  -> receives SO101 joint names
+#     - Client B: ws://...?leader=trossen -> receives Trossen joint names
 #
 # Usage:
 #   include("src/UnifiedWebSocketServer.jl")
@@ -12,6 +19,10 @@
 #   server = UnifiedServer(port=8080, robot="lekiwi", fps=30.0)
 #   register_camera!(server, "front")
 #   register_camera!(server, "wrist")
+#   
+#   # Set up per-client context factory (optional)
+#   set_context_factory!(server, leader_type -> create_teleop_context(...))
+#   
 #   start!(server, get_state_callback)
 #
 #   # In control loop:
@@ -49,6 +60,9 @@ end
 
 Single-port WebSocket server with path-based routing for robot control and cameras.
 
+Supports per-client leader types via query parameters, allowing different clients
+to use different joint naming conventions simultaneously.
+
 # Fields
 - `port::Int`: Server port (default 8080)
 - `robot::String`: Robot namespace prefix (e.g., "lekiwi", "trossen/wxai")
@@ -65,6 +79,10 @@ Single-port WebSocket server with path-based routing for robot control and camer
 - `data_ref::Ref{Any}`: Reference to MuJoCo data
 - `server_task::Union{Task, Nothing}`: Background server task
 - `running::Bool`: Server running state
+- `client_contexts::Dict{Any, Any}`: Per-client teleop contexts (ws → context)
+- `client_contexts_lock::ReentrantLock`: Lock for client context access
+- `context_factory::Union{Function, Nothing}`: Factory for creating per-client contexts
+- `default_leader_type::Any`: Default leader type when not specified in query
 """
 mutable struct UnifiedServer
     port::Int
@@ -82,6 +100,11 @@ mutable struct UnifiedServer
     data_ref::Ref{Any}
     server_task::Union{Task, Nothing}
     running::Bool
+    # Per-client context support
+    client_contexts::Dict{Any, Any}
+    client_contexts_lock::ReentrantLock
+    context_factory::Union{Function, Nothing}
+    default_leader_type::Any
 end
 
 """
@@ -112,8 +135,47 @@ function UnifiedServer(; port::Int = 8080, robot::String = "robot",
         Ref{Any}(nothing),
         Ref{Any}(nothing),
         nothing,
-        false
+        false,
+        # Per-client context fields
+        Dict{Any, Any}(),
+        ReentrantLock(),
+        nothing,
+        nothing
     )
+end
+
+"""
+    set_context_factory!(server::UnifiedServer, factory::Function, default_leader_type)
+
+Set a factory function for creating per-client teleop contexts.
+
+When set, each new control client connection will get its own teleop context
+based on the `?leader=X` query parameter (or default_leader_type if not specified).
+
+# Arguments
+- `server`: UnifiedServer instance
+- `factory`: Function `(leader_type::Type) -> TeleoperatorContext`
+- `default_leader_type`: Default leader type when query param not specified
+
+# Example
+```julia
+set_context_factory!(server, 
+    leader_type -> create_teleop_context(leader_type, FollowerType, model, data),
+    SO101)
+```
+"""
+function set_context_factory!(server::UnifiedServer, factory::Function, default_leader_type)
+    server.context_factory = factory
+    server.default_leader_type = default_leader_type
+end
+
+"""
+    get_client_context(server::UnifiedServer, ws) -> Union{Any, Nothing}
+
+Get the teleop context for a specific client, if one exists.
+"""
+function get_client_context(server::UnifiedServer, ws)
+    return @lock server.client_contexts_lock get(server.client_contexts, ws, nothing)
 end
 
 # =============================================================================
@@ -218,6 +280,7 @@ end
     handle_request!(server, http, robot_prefix, get_state)
 
 Route incoming HTTP/WebSocket requests based on path.
+Query parameters are passed to control client handlers for per-client configuration.
 """
 function handle_request!(
         server::UnifiedServer, http, robot_prefix::String, get_state::Function)
@@ -244,10 +307,11 @@ function handle_request!(
     # Extract subpath after robot prefix
     subpath = path[(length(robot_prefix) + 1):end]
 
-    # Route: /{robot}/control
+    # Route: /{robot}/control or /{robot}/control?leader=X
     if subpath == "/control"
         HTTP.WebSockets.upgrade(http) do ws
-            handle_control_client!(server, ws, get_state)
+            # Pass full target (with query string) for per-client context setup
+            handle_control_client!(server, ws, get_state, target)
         end
         return
     end
@@ -278,15 +342,54 @@ end
 # =============================================================================
 
 """
-    handle_control_client!(server, ws, get_state)
+    handle_control_client!(server, ws, get_state, target)
 
 Handle a control WebSocket client connection.
+
+Creates a per-client teleop context if a context factory is configured,
+using the `?leader=X` query parameter to determine the leader type.
+
+# Arguments
+- `server`: UnifiedServer instance
+- `ws`: WebSocket connection
+- `get_state`: Function to get joint state (used as fallback)
+- `target`: HTTP request target including query string
 """
-function handle_control_client!(server::UnifiedServer, ws, get_state::Function)
-    println("Control client connected")
+function handle_control_client!(
+        server::UnifiedServer, ws, get_state::Function, target::String)
+    # Create per-client context if factory is configured
+    client_ctx = nothing
+    leader_type = server.default_leader_type
+
+    if server.context_factory !== nothing && server.default_leader_type !== nothing
+        # Parse leader type from query param
+        leader_str = parse_query_param(target, "leader")
+        if !isempty(leader_str)
+            # Try to resolve leader type (requires ROBOT_TYPE_MAP from CLIUtils)
+            # The context factory should handle the type lookup
+            leader_type = leader_str
+        end
+
+        try
+            client_ctx = server.context_factory(leader_type)
+            @lock server.client_contexts_lock begin
+                server.client_contexts[ws] = client_ctx
+            end
+        catch e
+            @warn "Failed to create client context" exception = e
+        end
+    end
+
+    # Log connection with leader info
+    if client_ctx !== nothing
+        println("Control client connected (leader=$leader_type)")
+    else
+        println("Control client connected")
+    end
+
     @lock server.control_clients_lock push!(server.control_clients, ws)
 
-    # Send initial state to new client
+    # Send initial state to new client (using client's context if available)
     if server.model_ref[] !== nothing && server.data_ref[] !== nothing
         send_state_to_client!(server, ws, server.model_ref[], server.data_ref[], get_state)
     end
@@ -295,6 +398,8 @@ function handle_control_client!(server::UnifiedServer, ws, get_state::Function)
         for msg in ws
             try
                 raw = JSON.parse(String(msg))
+                # Include source websocket reference for per-client command processing
+                raw["_ws"] = ws
                 put!(server.control_channel, raw)
 
                 # Handle ping
@@ -311,6 +416,7 @@ function handle_control_client!(server::UnifiedServer, ws, get_state::Function)
         end
     finally
         @lock server.control_clients_lock delete!(server.control_clients, ws)
+        @lock server.client_contexts_lock delete!(server.client_contexts, ws)
         println("Control client disconnected")
     end
 end
@@ -319,9 +425,22 @@ end
     send_state_to_client!(server, ws, model, data, get_state)
 
 Send current state to a specific control client.
+
+Uses the client's teleop context if available for per-client state format.
 """
 function send_state_to_client!(server::UnifiedServer, ws, model, data, get_state::Function)
-    state = get_state(model, data)
+    # Get client-specific context if available
+    client_ctx = get_client_context(server, ws)
+
+    state = if client_ctx !== nothing && hasproperty(client_ctx, :follower_joint_map)
+        # Use per-client context for state formatting
+        # This requires get_state_for_leader from TeleoperatorMapping
+        # The example scripts will provide this via get_state callback
+        get_state(model, data, client_ctx)
+    else
+        get_state(model, data)
+    end
+
     msg = JSON.json(Dict(
         "event" => "state_was_updated",
         "timestamp" => time(),
@@ -339,6 +458,9 @@ end
     process_commands!(server::UnifiedServer, data, actuator_map::Dict, apply_command!::Function)
 
 Process pending commands from the control channel.
+
+Commands now include a `_ws` field identifying the source client, enabling
+per-client command interpretation when a context factory is configured.
 """
 function process_commands!(
         server::UnifiedServer, data, actuator_map::Dict, apply_command!::Function)
@@ -348,16 +470,70 @@ function process_commands!(
 
         if cmd == "set_joints_state"
             joints = get(raw, "joints", Dict())
-            apply_command!(data, actuator_map, joints)
+            # Get source client's context for per-client joint mapping
+            ws = get(raw, "_ws", nothing)
+            client_ctx = ws !== nothing ? get_client_context(server, ws) : nothing
+
+            # Let apply_command! handle the context (if provided)
+            if client_ctx !== nothing
+                apply_command!(data, actuator_map, joints, client_ctx)
+            else
+                apply_command!(data, actuator_map, joints)
+            end
         end
     end
 end
 
 """
-    broadcast_control_state!(server::UnifiedServer, state::Dict)
+    broadcast_control_state!(server::UnifiedServer, model, data, get_state::Function)
 
-Broadcast state to all connected control clients.
+Broadcast state to all connected control clients using per-client formatting.
+
+Each client receives state in their own leader's joint naming convention
+if a per-client context is available.
 """
+function broadcast_control_state!(
+        server::UnifiedServer, model, data, get_state::Function)
+    current_time = time()
+
+    @lock server.control_clients_lock begin
+        dead_clients = []
+        for ws in server.control_clients
+            try
+                # Get client-specific context for state formatting
+                client_ctx = get_client_context(server, ws)
+
+                state = if client_ctx !== nothing
+                    # Try calling get_state with context
+                    try
+                        get_state(model, data, client_ctx)
+                    catch
+                        # Fallback if get_state doesn't accept context
+                        get_state(model, data)
+                    end
+                else
+                    get_state(model, data)
+                end
+
+                msg = JSON.json(Dict(
+                    "event" => "state_was_updated",
+                    "timestamp" => current_time,
+                    "state" => state,
+                    "is_controlled" => false
+                ))
+                HTTP.WebSockets.send(ws, msg)
+            catch e
+                push!(dead_clients, ws)
+            end
+        end
+        for ws in dead_clients
+            delete!(server.control_clients, ws)
+            @lock server.client_contexts_lock delete!(server.client_contexts, ws)
+        end
+    end
+end
+
+# Legacy method for backward compatibility (single state dict)
 function broadcast_control_state!(server::UnifiedServer, state::Dict)
     msg = JSON.json(Dict(
         "event" => "state_was_updated",
@@ -385,6 +561,8 @@ end
     maybe_broadcast!(server::UnifiedServer, model, data, get_state::Function)
 
 Broadcast control state if enough time has passed and state has changed.
+
+Supports per-client state formatting when a context factory is configured.
 """
 function maybe_broadcast!(server::UnifiedServer, model, data, get_state::Function)
     # Update refs for new client state sends
@@ -399,15 +577,30 @@ function maybe_broadcast!(server::UnifiedServer, model, data, get_state::Functio
         return
     end
 
-    state = get_state(model, data)
+    # Check if any clients have per-client contexts
+    has_per_client_contexts = !isempty(server.client_contexts)
 
-    # Only broadcast if state has changed
-    if !state_changed(state, server.prev_state, server.state_change_threshold)
-        return
+    if has_per_client_contexts
+        # Use per-client broadcasting (each client gets their own state format)
+        # First check if state has changed using default format
+        state = get_state(model, data)
+        if !state_changed(state, server.prev_state, server.state_change_threshold)
+            return
+        end
+        merge!(server.prev_state, state)
+
+        # Broadcast with per-client formatting
+        broadcast_control_state!(server, model, data, get_state)
+    else
+        # Use simple broadcasting (all clients get same state)
+        state = get_state(model, data)
+        if !state_changed(state, server.prev_state, server.state_change_threshold)
+            return
+        end
+        merge!(server.prev_state, state)
+        broadcast_control_state!(server, state)
     end
 
-    merge!(server.prev_state, state)
-    broadcast_control_state!(server, state)
     server.last_broadcast_time[] = current_time
 end
 

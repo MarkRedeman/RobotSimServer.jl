@@ -1,11 +1,18 @@
-# CLIUtils - Command-line argument parsing utilities
+# CLIUtils - Command-line and query parameter parsing utilities
 #
-# Provides helpers for parsing CLI arguments in simulation scripts.
+# Provides helpers for parsing CLI arguments and WebSocket query parameters
+# in simulation scripts.
 #
 # Usage:
 #   include("src/RobotTypes.jl")
 #   include("src/CLIUtils.jl")
+#   
+#   # CLI argument parsing
 #   leader_type = parse_leader_type(ARGS)
+#   
+#   # Query parameter parsing (for WebSocket URLs)
+#   target = "/lekiwi/control?leader=trossen"
+#   leader_type = parse_leader_from_query(target; default=SO101)
 #
 # Dependencies:
 #   This file assumes RobotTypes.jl is already loaded (for AbstractRobotArm,
@@ -45,6 +52,88 @@ function parse_leader_type(args::Vector{String}; default::Type{<:AbstractRobotAr
         end
     end
     return default
+end
+
+# =============================================================================
+# Query Parameter Parsing
+# =============================================================================
+
+"""
+    parse_query_param(target::String, param::String; default::String="")
+
+Parse a query parameter from an HTTP request target.
+
+# Arguments
+- `target`: HTTP request target (e.g., "/lekiwi/control?leader=so101&fps=60")
+- `param`: Parameter name to extract (e.g., "leader")
+- `default`: Default value if parameter not found
+
+# Returns
+- Parameter value as String
+
+# Example
+```julia
+target = "/lekiwi/control?leader=trossen&fps=60"
+parse_query_param(target, "leader")   # => "trossen"
+parse_query_param(target, "fps")      # => "60"
+parse_query_param(target, "missing")  # => ""
+```
+"""
+function parse_query_param(target::String, param::String; default::String = "")
+    # Split path and query string
+    parts = split(target, "?")
+    if length(parts) < 2
+        return default
+    end
+
+    query_string = parts[2]
+    for pair in split(query_string, "&")
+        kv = split(pair, "=")
+        if length(kv) == 2 && kv[1] == param
+            return String(kv[2])
+        end
+    end
+
+    return default
+end
+
+"""
+    parse_leader_from_query(target::String; default::Type{<:AbstractRobotArm}=SO101)
+
+Parse leader robot type from URL query parameter.
+
+Extracts the `leader` query parameter from a WebSocket URL target and
+maps it to a robot type using ROBOT_TYPE_MAP.
+
+# Arguments
+- `target`: HTTP request target (e.g., "/lekiwi/control?leader=trossen")
+- `default`: Default robot type if leader param not found or invalid
+
+# Returns
+- Robot type (e.g., SO101, TrossenWXAI)
+
+# Example
+```julia
+target = "/lekiwi/control?leader=trossen"
+leader_type = parse_leader_from_query(target)  # => TrossenWXAI
+
+target = "/lekiwi/control"
+leader_type = parse_leader_from_query(target; default=LeKiwiArm)  # => LeKiwiArm
+```
+"""
+function parse_leader_from_query(target::String; default::Type{<:AbstractRobotArm} = SO101)
+    leader_str = parse_query_param(target, "leader")
+    if isempty(leader_str)
+        return default
+    end
+
+    type_str = lowercase(leader_str)
+    if haskey(ROBOT_TYPE_MAP, type_str)
+        return ROBOT_TYPE_MAP[type_str]
+    else
+        @warn "Unknown leader type in query: $type_str, using default" default
+        return default
+    end
 end
 
 """

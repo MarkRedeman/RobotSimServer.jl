@@ -165,24 +165,46 @@ end
 println("Joints: ", join(joint_names_list, ", "))
 
 # --- Teleoperation Configuration ---
-const LeaderType = parse_leader_type(ARGS; default = SO101)
+const DefaultLeaderType = parse_leader_type(ARGS; default = SO101)
 const FollowerType = FanucArm
 const project_root = joinpath(@__DIR__, "..", "..")
-const teleop_ctx = create_teleop_context(LeaderType, FollowerType, model, data;
+
+# Create a context factory for per-client teleop contexts
+function create_client_context(leader_type)
+    resolved_type = if leader_type isa Type
+        leader_type
+    elseif leader_type isa AbstractString
+        get(ROBOT_TYPE_MAP, lowercase(leader_type), DefaultLeaderType)
+    else
+        DefaultLeaderType
+    end
+    println("Created teleop context: $(resolved_type) → $(FollowerType)")
+    return create_teleop_context(resolved_type, FollowerType, model, data;
+        project_root = project_root)
+end
+
+# Default context for fallback
+const default_teleop_ctx = create_teleop_context(
+    DefaultLeaderType, FollowerType, model, data;
     project_root = project_root)
-println(describe(teleop_ctx))
+println(describe(default_teleop_ctx))
 
 # --- Unified WebSocket Server ---
 server = UnifiedServer(port = 8080, robot = "fanuc/$(robot)", fps = 30.0)
 
+# Enable per-client leader types via ?leader=X query parameter
+set_context_factory!(server, create_client_context, DefaultLeaderType)
+
 # Robot-specific: how to get joint state (in leader format for compatibility)
-function get_joint_state(model, data)
+function get_joint_state(model, data, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
     return get_state_for_leader(teleop_ctx, model, data)
 end
 
 # Robot-specific: how to apply joint commands using teleop mapping
 # Uses TeleoperatorMapping to convert leader joints -> Fanuc joints via IK
-function apply_joint_command!(fanuc_data, actuator_map_unused, joints)
+function apply_joint_command!(fanuc_data, actuator_map_unused, joints, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
     joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
     mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
 
@@ -277,24 +299,26 @@ println("\nInitializing visualizer...")
 init_visualiser()
 
 # Print banner with teleop info
-leader_name = get_robot_name(LeaderType)
-scale_factor = round(workspace_scale(teleop_ctx), digits = 2)
+leader_name = get_robot_name(DefaultLeaderType)
+scale_factor = round(workspace_scale(default_teleop_ctx), digits = 2)
 
 println("\n" * "=" ^ 70)
 println("Fanuc Industrial Robot Simulation - $(uppercase(robot))")
 println("=" ^ 70)
 println("\nWebSocket Endpoints (all on port 8080):")
 println("  Control:       ws://localhost:8080/fanuc/$(robot)/control")
+println("  Control:       ws://localhost:8080/fanuc/$(robot)/control?leader=<type>")
 println("  Front camera:  ws://localhost:8080/fanuc/$(robot)/cameras/front")
 println("  Side camera:   ws://localhost:8080/fanuc/$(robot)/cameras/side")
 println("  Orbit camera:  ws://localhost:8080/fanuc/$(robot)/cameras/orbit")
 println("  Gripper cam:   ws://localhost:8080/fanuc/$(robot)/cameras/gripper")
 println("\nTeleoperation:")
-println("  Leader type:       $(leader_name) ($(LeaderType))")
-println("  Mapping strategy:  $(typeof(teleop_ctx.strategy))")
+println("  Leader type:       $(leader_name) ($(DefaultLeaderType))")
+println("  Mapping strategy:  $(typeof(default_teleop_ctx.strategy))")
 println("  Workspace scale:   $(scale_factor)x ($(leader_name) -> Fanuc)")
-println("\nJoint Commands ($(leader_name) format):")
-println("  shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper")
+println("\nPer-client leader type support:")
+println("  Default (CLI):     --leader=so101")
+println("  Per-connection:    ?leader=so101, ?leader=trossen, ?leader=lekiwi")
 println("=" ^ 70)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 

@@ -73,12 +73,33 @@ actuator_map = Dict(name => i for (i, name) in enumerate(actuator_names))
 println("Available actuators: ", actuator_names)
 
 # --- Teleoperation Configuration ---
-const LeaderType = parse_leader_type(ARGS; default = SO101)  # Default SO101 for compat
+const DefaultLeaderType = parse_leader_type(ARGS; default = SO101)  # Default SO101 for compat
 const FollowerType = LeKiwiArm
 const project_root = joinpath(@__DIR__, "..", "..")
-const teleop_ctx = create_teleop_context(LeaderType, FollowerType, model, data;
+
+# Create a context factory for per-client teleop contexts
+# This allows each WebSocket client to have their own leader type
+function create_client_context(leader_type)
+    # Handle both Type and String inputs (query param comes as string)
+    resolved_type = if leader_type isa Type
+        leader_type
+    elseif leader_type isa AbstractString
+        get(ROBOT_TYPE_MAP, lowercase(leader_type), DefaultLeaderType)
+    else
+        DefaultLeaderType
+    end
+
+    ctx = create_teleop_context(resolved_type, FollowerType, model, data;
+        project_root = project_root)
+    println("Created teleop context: $(resolved_type) → $(FollowerType)")
+    return ctx
+end
+
+# Create default context for legacy/fallback use
+const default_teleop_ctx = create_teleop_context(
+    DefaultLeaderType, FollowerType, model, data;
     project_root = project_root)
-println(describe(teleop_ctx))
+println(describe(default_teleop_ctx))
 
 # ============================================================================
 # Omniwheel Kinematics
@@ -140,6 +161,9 @@ end
 # ============================================================================
 server = UnifiedServer(port = 8080, robot = "lekiwi", fps = 30.0)
 
+# Enable per-client leader types via ?leader=X query parameter
+set_context_factory!(server, create_client_context, DefaultLeaderType)
+
 # ============================================================================
 # Base Velocity Controller
 # ============================================================================
@@ -152,7 +176,11 @@ base_ctrl = BaseVelocityController(
 )
 
 # Get joint state: arm joints (leader-compatible names) + wheel velocities (rad/s)
-function get_joint_state(model, data)
+# Supports per-client context for different leader types
+function get_joint_state(model, data, ctx = nothing)
+    # Use provided context or fall back to default
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+
     # Get arm state in leader-compatible names
     state = get_state_for_leader(teleop_ctx, model, data)
 
@@ -169,7 +197,11 @@ function get_joint_state(model, data)
 end
 
 # Apply joint commands (degrees -> radians) with teleop mapping
-function apply_joint_command!(data, actuator_map, joints)
+# Supports per-client context for different leader types
+function apply_joint_command!(data, actuator_map, joints, ctx = nothing)
+    # Use provided context or fall back to default
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+
     joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
     mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
 
@@ -223,7 +255,10 @@ function ctrl!(m, d)
         if cmd == "set_joints_state"
             joints = get(raw, "joints", Dict())
             if !isempty(joints)
-                apply_joint_command!(d, actuator_map, joints)
+                # Get per-client context if available
+                ws = get(raw, "_ws", nothing)
+                client_ctx = ws !== nothing ? get_client_context(server, ws) : nothing
+                apply_joint_command!(d, actuator_map, joints, client_ctx)
             end
         end
     end
@@ -297,16 +332,19 @@ end
 println("\nInitializing visualizer...")
 init_visualiser()
 
-print_teleop_banner(LeaderType, FollowerType, teleop_ctx.strategy)
-println("\nUsage:")
-println("  --leader=so101  (default) Accept SO101 joint names")
-println("  --leader=lekiwi Accept LeKiwi native joint names (Rotation, Pitch, etc.)")
+print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
+println("\nPer-client leader type support:")
+println("  Default (CLI):     --leader=so101")
+println("  Per-connection:    ws://...?leader=so101")
+println("                     ws://...?leader=lekiwi")
+println("                     ws://...?leader=trossen")
 
 println("\n" * "=" ^ 60)
 println("LeKiwi Mobile Manipulator Simulation")
 println("=" ^ 60)
 println("\nWebSocket Endpoints (all on port 8080):")
 println("  Control:           ws://localhost:8080/lekiwi/control")
+println("  Control (custom):  ws://localhost:8080/lekiwi/control?leader=<type>")
 println("  Front camera:      ws://localhost:8080/lekiwi/cameras/front")
 println("  Wrist camera:      ws://localhost:8080/lekiwi/cameras/wrist")
 println("  Left side camera:  ws://localhost:8080/lekiwi/cameras/side_left")
