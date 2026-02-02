@@ -251,17 +251,61 @@ Information about a mesh referenced in MJCF.
 """
 struct MeshInfo
     name::String
-    file::String
+    file::String           # Original file path from MJCF
+    resolved_file::String  # Resolved path relative to project root (for URL generation)
     scale::Vector{Float64}
 end
 
 """
-    extract_mesh_assets(doc::EzXML.Document, base_dir::String) -> Dict{String, MeshInfo}
+    resolve_mesh_path(mesh_file::String, base_dir::String, project_root::String) -> String
+
+Resolve a mesh file path to be relative to the project root.
+
+Given a mesh path from MJCF (which may be relative to the MJCF file's directory),
+resolve it to an absolute path and then make it relative to the project root.
+
+# Arguments
+- `mesh_file`: The mesh file path as specified in MJCF
+- `base_dir`: The directory containing the MJCF file
+- `project_root`: The project root directory
+
+# Returns
+- Path relative to project root, suitable for URL generation
+"""
+function resolve_mesh_path(mesh_file::String, base_dir::String, project_root::String)
+    # Resolve the mesh path relative to the MJCF's base directory
+    abs_mesh_path = normpath(joinpath(base_dir, mesh_file))
+
+    # Make it relative to project root
+    abs_project_root = normpath(abspath(project_root))
+
+    # Check if the mesh path is within the project root
+    if startswith(abs_mesh_path, abs_project_root)
+        # Remove project root prefix and leading separator
+        rel_path = abs_mesh_path[(length(abs_project_root) + 1):end]
+        rel_path = lstrip(rel_path, ['/', '\\'])
+        return rel_path
+    else
+        # Mesh is outside project root - use original path
+        # This shouldn't happen in practice, but handle gracefully
+        @warn "Mesh file outside project root" mesh_file abs_mesh_path project_root
+        return mesh_file
+    end
+end
+
+"""
+    extract_mesh_assets(doc::EzXML.Document, base_dir::String, project_root::String) -> Dict{String, MeshInfo}
 
 Extract mesh asset definitions from MJCF document.
 Returns a dictionary mapping mesh names to their file paths and scale.
+
+# Arguments
+- `doc`: Parsed MJCF document
+- `base_dir`: Directory containing the MJCF file
+- `project_root`: Project root directory for resolving relative paths
 """
-function extract_mesh_assets(doc::EzXML.Document, base_dir::String)
+function extract_mesh_assets(
+        doc::EzXML.Document, base_dir::String, project_root::String = base_dir)
     meshes = Dict{String, MeshInfo}()
     root = EzXML.root(doc)
 
@@ -274,9 +318,10 @@ function extract_mesh_assets(doc::EzXML.Document, base_dir::String)
                 scale_str = get_attr(mesh_node, "scale", "1 1 1")
 
                 if !isempty(name) && !isempty(file)
-                    # Keep mesh path relative to base_dir
                     scale = parse_vec3(scale_str, [1.0, 1.0, 1.0])
-                    meshes[name] = MeshInfo(name, file, scale)
+                    # Resolve the path relative to project root
+                    resolved = resolve_mesh_path(file, base_dir, project_root)
+                    meshes[name] = MeshInfo(name, file, resolved, scale)
                 end
             end
         end
@@ -477,8 +522,9 @@ function generate_geometry_urdf!(
         mesh_name = get_attr(geom, "mesh", "")
         if haskey(builder.meshes, mesh_name)
             mesh_info = builder.meshes[mesh_name]
-            # Use package:// or file:// URI
-            mesh_path = mesh_info.file
+            # Use meshes/ prefix for URL routing via the asset server
+            # The resolved_file is relative to project root
+            mesh_path = "meshes/" * mesh_info.resolved_file
             emit!(builder, "<mesh filename=\"$(mesh_path)\"/>")
         else
             add_warning!(builder, "Mesh not found: $(mesh_name)")
@@ -748,21 +794,22 @@ Convert a MuJoCo XML (MJCF) file to URDF format.
 - Resolves <include> directives recursively
 - Converts body hierarchy to link/joint structure
 - Maps MuJoCo joint types to URDF equivalents
-- Preserves mesh references with relative paths
+- Mesh paths are converted to URL-friendly paths with meshes/ prefix
 - Skips unsupported MuJoCo features (tendons, actuators, sensors, etc.)
 
 # Example
 ```julia
-urdf = generate_urdf_from_mjcf("robots/trossen/scene.xml")
+urdf = generate_urdf_from_mjcf("robots/trossen/scene.xml", ".")
 write("robot.urdf", urdf)
 ```
 """
-function generate_urdf_from_mjcf(mjcf_path::String)
+function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     if !isfile(mjcf_path)
         throw(MJCFParseError("File not found: $mjcf_path"))
     end
 
     base_dir = dirname(abspath(mjcf_path))
+    abs_project_root = abspath(project_root)
 
     # Parse MJCF
     doc = EzXML.readxml(mjcf_path)
@@ -775,8 +822,8 @@ function generate_urdf_from_mjcf(mjcf_path::String)
     # Get robot name from mujoco model attribute
     robot_name = get_attr(root, "model", "robot")
 
-    # Extract mesh assets
-    meshes = extract_mesh_assets(doc, base_dir)
+    # Extract mesh assets with project root for path resolution
+    meshes = extract_mesh_assets(doc, base_dir, abs_project_root)
 
     # Create builder
     builder = URDFBuilder(robot_name, meshes, base_dir)
@@ -821,7 +868,7 @@ function generate_urdf_from_mjcf(mjcf_path::String)
 end
 
 """
-    get_or_generate_urdf(mjcf_path::String, cache_dir::String) -> String
+    get_or_generate_urdf(mjcf_path::String, cache_dir::String, project_root::String=".") -> String
 
 Get cached URDF or generate from MJCF if cache is stale.
 
@@ -830,16 +877,18 @@ Uses file modification time for cache invalidation.
 # Arguments
 - `mjcf_path`: Path to the MuJoCo XML file
 - `cache_dir`: Directory to store cached URDF files
+- `project_root`: Project root directory for resolving mesh paths (default: ".")
 
 # Returns
 - URDF content as a string
 
 # Example
 ```julia
-urdf = get_or_generate_urdf("robots/trossen/scene.xml", ".cache/urdf")
+urdf = get_or_generate_urdf("robots/trossen/scene.xml", ".cache/urdf", ".")
 ```
 """
-function get_or_generate_urdf(mjcf_path::String, cache_dir::String)
+function get_or_generate_urdf(
+        mjcf_path::String, cache_dir::String, project_root::String = ".")
     if !isfile(mjcf_path)
         throw(MJCFParseError("File not found: $mjcf_path"))
     end
@@ -849,9 +898,9 @@ function get_or_generate_urdf(mjcf_path::String, cache_dir::String)
         mkpath(cache_dir)
     end
 
-    # Generate cache file path based on MJCF path hash
-    mjcf_abs_path = abspath(mjcf_path)
-    cache_key = bytes2hex(sha256(mjcf_abs_path))
+    # Generate cache file path based on MJCF path AND project root (since paths depend on it)
+    cache_input = mjcf_path * "|" * abspath(project_root)
+    cache_key = bytes2hex(sha256(cache_input))
     cache_file = joinpath(cache_dir, "$(cache_key).urdf")
     cache_meta = joinpath(cache_dir, "$(cache_key).meta")
 
@@ -878,7 +927,7 @@ function get_or_generate_urdf(mjcf_path::String, cache_dir::String)
 
     # Generate URDF
     @info "Generating URDF from: $mjcf_path"
-    urdf_content = generate_urdf_from_mjcf(mjcf_path)
+    urdf_content = generate_urdf_from_mjcf(mjcf_path, project_root)
 
     # Write to cache
     write(cache_file, urdf_content)

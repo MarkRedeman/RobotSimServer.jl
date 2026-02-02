@@ -566,7 +566,8 @@ function handle_urdf!(manager::SimulationManager, http, robot_id::AbstractString
         else
             # Generate URDF from MJCF
             mjcf_path = get_full_mjcf_path(config, manager.project_root)
-            urdf_content = get_or_generate_urdf(mjcf_path, manager.urdf_cache_dir)
+            urdf_content = get_or_generate_urdf(
+                mjcf_path, manager.urdf_cache_dir, manager.project_root)
             serve_content!(http, urdf_content, "application/xml")
         end
     catch e
@@ -579,12 +580,28 @@ end
     handle_mesh!(manager::SimulationManager, http, robot_id::AbstractString, mesh_path::AbstractString)
 
 Serve mesh file for a robot.
+
+Supports two path resolution strategies:
+1. Paths starting with known project directories (robots/, examples/) are served from project root
+2. Other paths are served relative to the robot's assets_dir
 """
 function handle_mesh!(manager::SimulationManager, http, robot_id::AbstractString, mesh_path::AbstractString)
     try
-        config = get_robot_config(robot_id, manager.project_root)
-        assets_dir = joinpath(manager.project_root, config.assets_dir)
-        serve_mesh!(http, assets_dir, mesh_path)
+        # Check if this is a project-root-relative path (used by generated URDFs)
+        # These paths start with known project directories
+        project_root_prefixes = ["robots/", "examples/", "src/"]
+        is_project_relative = any(startswith(mesh_path, prefix)
+        for prefix in project_root_prefixes)
+
+        if is_project_relative
+            # Serve directly from project root
+            serve_mesh!(http, manager.project_root, mesh_path)
+        else
+            # Serve relative to robot's assets directory
+            config = get_robot_config(robot_id, manager.project_root)
+            assets_dir = joinpath(manager.project_root, config.assets_dir)
+            serve_mesh!(http, assets_dir, mesh_path)
+        end
     catch e
         if e isa ArgumentError
             serve_404!(http, "Unknown robot: $robot_id")
