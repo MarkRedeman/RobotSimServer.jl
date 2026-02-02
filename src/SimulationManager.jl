@@ -403,7 +403,11 @@ function handle_request!(manager::SimulationManager, http)
             handle_urdf!(manager, http, robot_id)
         elseif endpoint == "meshes" || endpoint == "assets"
             # Support both /meshes/ and /assets/ paths for URDF compatibility
+            # For /assets/ endpoint, the subpath doesn't include "assets/" but files are in assets/ dir
             asset_path = length(segments) >= 3 ? join(segments[3:end], "/") : ""
+            if endpoint == "assets"
+                asset_path = "assets/" * asset_path
+            end
             handle_mesh!(manager, http, robot_id, asset_path)
         else
             # Check if this looks like an asset file request (has a file extension)
