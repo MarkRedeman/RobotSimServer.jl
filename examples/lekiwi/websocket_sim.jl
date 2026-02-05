@@ -48,7 +48,7 @@ println("Loading model from: $xml_path")
 
 # Generate cubes around the robot, within arm reach
 # LeKiwi arm has similar reach to SO101 (~0.35m)
-cubes = generate_cubes(50, radius_min = 0.15, radius_max = 0.40, z = 0.08)
+cubes = generate_cubes(0, radius_min = 0.15, radius_max = 0.40, z = 0.08)
 
 # Build scene with cubes (cameras are already in the XML)
 model, data = build_scene(xml_path, cubes)

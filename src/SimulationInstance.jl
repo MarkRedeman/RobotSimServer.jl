@@ -136,7 +136,7 @@ function SimulationInstance(config::RobotConfig, project_root::String;
     println("  Loading model: $mjcf_path")
 
     # Generate cubes
-    cubes = generate_cubes(50;
+    cubes = generate_cubes(5;
         radius_min = config.cube_config.radius_min,
         radius_max = config.cube_config.radius_max,
         size = config.cube_config.size,
