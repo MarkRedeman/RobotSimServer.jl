@@ -499,61 +499,99 @@ function GeomDefaults()
 end
 
 """
-    extract_default_classes(doc::EzXML.Document) -> Dict{String, GeomDefaults}
+    JointDefaults
+
+Default properties for a joint class, extracted from MJCF <default> elements.
+"""
+struct JointDefaults
+    type::String   # Joint type: hinge, slide, ball, free
+    axis::String   # Joint axis as "x y z" string
+    range::String  # Joint limits as "lower upper" string
+    armature::String
+    frictionloss::String
+    damping::String
+end
+
+function JointDefaults()
+    return JointDefaults("hinge", "0 0 1", "", "", "", "")
+end
+
+"""
+    extract_default_classes(doc::EzXML.Document) -> Tuple{Dict{String, GeomDefaults}, Dict{String, JointDefaults}}
 
 Extract default class definitions from MJCF document.
-Returns a dictionary mapping class names to their default geom properties.
+Returns a tuple of two dictionaries:
+- Geom defaults: mapping class names to their default geom properties
+- Joint defaults: mapping class names to their default joint properties
 """
 function extract_default_classes(doc::EzXML.Document)
-    defaults = Dict{String, GeomDefaults}()
+    geom_defaults = Dict{String, GeomDefaults}()
+    joint_defaults = Dict{String, JointDefaults}()
     root = EzXML.root(doc)
 
     # Find all default sections and process recursively
     for default_section in EzXML.findall("//default", root)
-        _extract_defaults_recursive!(defaults, default_section, GeomDefaults())
+        _extract_defaults_recursive!(
+            geom_defaults, joint_defaults, default_section, GeomDefaults(), JointDefaults())
     end
 
-    return defaults
+    return (geom_defaults, joint_defaults)
 end
 
 function _extract_defaults_recursive!(
-        defaults::Dict{String, GeomDefaults},
+        geom_defaults::Dict{String, GeomDefaults},
+        joint_defaults::Dict{String, JointDefaults},
         node::EzXML.Node,
-        parent_defaults::GeomDefaults
+        parent_geom_defaults::GeomDefaults,
+        parent_joint_defaults::JointDefaults
 )
     # Check if this default element has a class attribute
     class_name = get_attr(node, "class", "")
 
-    # Look for geom child to get geom defaults
-    current_defaults = parent_defaults
+    # Look for geom and joint children to get defaults
+    current_geom_defaults = parent_geom_defaults
+    current_joint_defaults = parent_joint_defaults
+
     for child in EzXML.eachelement(node)
         if EzXML.nodename(child) == "geom"
             # Merge geom attributes with parent defaults
-            current_defaults = GeomDefaults(
-                _get_or_default(child, "type", parent_defaults.type),
-                _get_or_default(child, "mesh", parent_defaults.mesh),
-                _get_or_default(child, "size", parent_defaults.size),
-                _get_or_default(child, "pos", parent_defaults.pos),
-                _get_or_default(child, "euler", parent_defaults.euler),
-                _get_or_default(child, "quat", parent_defaults.quat),
-                _get_or_default(child, "rgba", parent_defaults.rgba),
-                _get_or_default(child, "material", parent_defaults.material),
-                _get_or_default(child, "contype", parent_defaults.contype),
-                _get_or_default(child, "conaffinity", parent_defaults.conaffinity)
+            current_geom_defaults = GeomDefaults(
+                _get_or_default(child, "type", parent_geom_defaults.type),
+                _get_or_default(child, "mesh", parent_geom_defaults.mesh),
+                _get_or_default(child, "size", parent_geom_defaults.size),
+                _get_or_default(child, "pos", parent_geom_defaults.pos),
+                _get_or_default(child, "euler", parent_geom_defaults.euler),
+                _get_or_default(child, "quat", parent_geom_defaults.quat),
+                _get_or_default(child, "rgba", parent_geom_defaults.rgba),
+                _get_or_default(child, "material", parent_geom_defaults.material),
+                _get_or_default(child, "contype", parent_geom_defaults.contype),
+                _get_or_default(child, "conaffinity", parent_geom_defaults.conaffinity)
             )
-            break
+        elseif EzXML.nodename(child) == "joint"
+            # Merge joint attributes with parent defaults
+            current_joint_defaults = JointDefaults(
+                _get_or_default(child, "type", parent_joint_defaults.type),
+                _get_or_default(child, "axis", parent_joint_defaults.axis),
+                _get_or_default(child, "range", parent_joint_defaults.range),
+                _get_or_default(child, "armature", parent_joint_defaults.armature),
+                _get_or_default(child, "frictionloss", parent_joint_defaults.frictionloss),
+                _get_or_default(child, "damping", parent_joint_defaults.damping)
+            )
         end
     end
 
     # Store defaults if this has a class name
     if !isempty(class_name)
-        defaults[class_name] = current_defaults
+        geom_defaults[class_name] = current_geom_defaults
+        joint_defaults[class_name] = current_joint_defaults
     end
 
     # Process nested default elements
     for child in EzXML.eachelement(node)
         if EzXML.nodename(child) == "default"
-            _extract_defaults_recursive!(defaults, child, current_defaults)
+            _extract_defaults_recursive!(
+                geom_defaults, joint_defaults, child,
+                current_geom_defaults, current_joint_defaults)
         end
     end
 end
@@ -593,6 +631,32 @@ function apply_geom_defaults(geom::EzXML.Node, defaults::Dict{String, GeomDefaul
     )
 end
 
+"""
+    apply_joint_defaults(joint::EzXML.Node, defaults::Dict{String, JointDefaults}) -> NamedTuple
+
+Get effective joint properties by merging with class defaults.
+Returns a named tuple with all relevant properties.
+"""
+function apply_joint_defaults(joint::EzXML.Node, defaults::Dict{String, JointDefaults})
+    class_name = get_attr(joint, "class", "")
+
+    # Start with base defaults
+    base = JointDefaults()
+    if haskey(defaults, class_name)
+        base = defaults[class_name]
+    end
+
+    # Override with explicit attributes on the joint
+    return (
+        type = _get_or_default(joint, "type", base.type),
+        axis = _get_or_default(joint, "axis", base.axis),
+        range = _get_or_default(joint, "range", base.range),
+        armature = _get_or_default(joint, "armature", base.armature),
+        frictionloss = _get_or_default(joint, "frictionloss", base.frictionloss),
+        damping = _get_or_default(joint, "damping", base.damping)
+    )
+end
+
 # =============================================================================
 # URDF Generation
 # =============================================================================
@@ -610,7 +674,8 @@ mutable struct URDFBuilder
     joint_names::Set{String}
     meshes::Dict{String, MeshInfo}
     materials::Dict{String, MaterialInfo}
-    defaults::Dict{String, GeomDefaults}
+    geom_defaults::Dict{String, GeomDefaults}
+    joint_defaults::Dict{String, JointDefaults}
     base_dir::String
     warnings::Vector{String}
     eulerseq::String  # Euler angle sequence from MJCF compiler (default: "xyz")
@@ -620,7 +685,8 @@ function URDFBuilder(
         robot_name::String,
         meshes::Dict{String, MeshInfo},
         materials::Dict{String, MaterialInfo},
-        defaults::Dict{String, GeomDefaults},
+        geom_defaults::Dict{String, GeomDefaults},
+        joint_defaults::Dict{String, JointDefaults},
         base_dir::String,
         eulerseq::String = "xyz"
 )
@@ -632,7 +698,8 @@ function URDFBuilder(
         Set{String}(),
         meshes,
         materials,
-        defaults,
+        geom_defaults,
+        joint_defaults,
         base_dir,
         String[],
         eulerseq
@@ -756,7 +823,7 @@ function generate_geometry_urdf!(
         index::Int
 )
     # Apply defaults from class if present
-    props = apply_geom_defaults(geom, builder.defaults)
+    props = apply_geom_defaults(geom, builder.geom_defaults)
     mjcf_type = props.type
 
     # Skip geoms with contype="0" conaffinity="0" for collision
@@ -919,6 +986,9 @@ function generate_joint_urdf!(
         body_pos::Vector{Float64},
         body_rpy::Vector{Float64}
 )
+    # Apply joint defaults from class if present
+    props = apply_joint_defaults(joint, builder.joint_defaults)
+
     joint_name = get_attr(joint, "name", "joint_$(length(builder.joint_names))")
 
     # Ensure unique joint name
@@ -930,8 +1000,7 @@ function generate_joint_urdf!(
     end
     push!(builder.joint_names, joint_name)
 
-    mjcf_type = get_attr(joint, "type", "hinge")
-    urdf_type = mjcf_joint_type_to_urdf(mjcf_type)
+    urdf_type = mjcf_joint_type_to_urdf(props.type)
 
     emit!(builder, "<joint name=\"$(joint_name)\" type=\"$(urdf_type)\">")
     builder.indent_level += 1
@@ -943,16 +1012,14 @@ function generate_joint_urdf!(
     # Origin (from body pos/rpy, as joint is defined within body)
     emit!(builder, "<origin xyz=\"$(format_vec3(body_pos))\" rpy=\"$(format_vec3(body_rpy))\"/>")
 
-    # Axis
-    axis_str = get_attr(joint, "axis", "0 0 1")
-    axis = parse_vec3(axis_str, [0.0, 0.0, 1.0])
+    # Axis - use defaults if not explicitly specified
+    axis = parse_vec3(props.axis, [0.0, 0.0, 1.0])
     emit!(builder, "<axis xyz=\"$(format_vec3(axis))\"/>")
 
     # Limits (for revolute and prismatic)
     if urdf_type in ["revolute", "prismatic"]
-        range_str = get_attr(joint, "range", "")
-        if !isempty(range_str)
-            parts = split(strip(range_str))
+        if !isempty(props.range)
+            parts = split(strip(props.range))
             if length(parts) >= 2
                 lower = tryparse(Float64, parts[1])
                 upper = tryparse(Float64, parts[2])
@@ -1138,8 +1205,8 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     # Extract material definitions for color support
     materials = extract_materials(doc)
 
-    # Extract default classes for geom property inheritance
-    defaults = extract_default_classes(doc)
+    # Extract default classes for geom and joint property inheritance
+    (geom_defaults, joint_defaults) = extract_default_classes(doc)
 
     # Extract compiler settings for euler angle convention
     # MJCF default eulerseq is "xyz" (intrinsic rotations)
@@ -1154,7 +1221,8 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     end
 
     # Create builder
-    builder = URDFBuilder(robot_name, meshes, materials, defaults, base_dir, eulerseq)
+    builder = URDFBuilder(
+        robot_name, meshes, materials, geom_defaults, joint_defaults, base_dir, eulerseq)
 
     # Start URDF document
     emit!(builder, "<?xml version=\"1.0\"?>")
