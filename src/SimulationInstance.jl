@@ -666,7 +666,7 @@ end
 
 Add a camera stream client.
 """
-function add_camera_client!(instance::SimulationInstance, camera_name::String,
+function add_camera_client!(instance::SimulationInstance, camera_name::AbstractString,
         ws::HTTP.WebSockets.WebSocket)
     if !haskey(instance.cameras, camera_name)
         @warn "Unknown camera" camera_name
@@ -687,7 +687,7 @@ end
 
 Remove a camera stream client.
 """
-function remove_camera_client!(instance::SimulationInstance, camera_name::String,
+function remove_camera_client!(instance::SimulationInstance, camera_name::AbstractString,
         ws::HTTP.WebSockets.WebSocket)
     if !haskey(instance.cameras, camera_name)
         return
