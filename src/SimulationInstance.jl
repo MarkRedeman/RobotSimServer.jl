@@ -31,6 +31,7 @@ using FileIO
 # include("RobotTypes.jl")
 # include("TeleoperatorMapping.jl")
 # include("CLIUtils.jl")
+# include("BaseController.jl")
 
 # =============================================================================
 # Types
@@ -92,6 +93,7 @@ mutable struct SimulationInstance
     client_contexts_lock::ReentrantLock
     default_teleop_ctx::Any
     actuator_map::Dict{String, Int}
+    base_controller::Union{BaseVelocityController, Nothing}
     running::Bool
     physics_task::Union{Task, Nothing}
     broadcast_task::Union{Task, Nothing}
@@ -207,6 +209,15 @@ function SimulationInstance(config::RobotConfig, project_root::String;
         project_root = project_root)
     println("  Teleop: $(config.default_leader_type) → $(config.follower_type)")
 
+    # Create base controller for mobile robots
+    base_controller = config.has_mobile_base ?
+                      BaseVelocityController(
+        max_vx = 0.15, max_vy = 0.10, max_omega = 0.8, timeout = 0.5) :
+                      nothing
+    if base_controller !== nothing
+        println("  Mobile base: enabled")
+    end
+
     instance = SimulationInstance(
         config,
         project_root,
@@ -221,6 +232,7 @@ function SimulationInstance(config::RobotConfig, project_root::String;
         ReentrantLock(),
         default_teleop_ctx,
         actuator_map,
+        base_controller,
         false,  # running
         nothing,  # physics_task
         nothing,  # broadcast_task
@@ -369,6 +381,15 @@ function physics_loop!(instance::SimulationInstance)
             # Process pending commands
             process_commands!(instance)
 
+            # Apply base velocities for mobile robots
+            if instance.base_controller !== nothing
+                vx, vy, omega = get_velocities(instance.base_controller)
+                wheel_vels = body_to_wheel_velocities(vx, vy, omega)
+                instance.data.ctrl[1] = wheel_vels[1]
+                instance.data.ctrl[2] = wheel_vels[2]
+                instance.data.ctrl[3] = wheel_vels[3]
+            end
+
             # Step physics
             step!(instance.model, instance.data)
 
@@ -407,6 +428,11 @@ function process_commands!(instance::SimulationInstance)
 
             # Apply command
             apply_joint_command!(instance, joints, teleop_ctx)
+        elseif cmd == "set_base_velocity" && instance.base_controller !== nothing
+            vx = Float64(get(raw, "vx", 0.0))
+            vy = Float64(get(raw, "vy", 0.0))
+            omega = Float64(get(raw, "omega", 0.0))
+            update_from_websocket!(instance.base_controller, vx, vy, omega)
         end
     end
 end

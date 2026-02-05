@@ -226,3 +226,45 @@ function get_source(ctrl::BaseVelocityController)
     end
     return ctrl.source
 end
+
+# =============================================================================
+# Omniwheel Kinematics (LeKiwi 3-wheel omnidrive)
+# =============================================================================
+
+# LeKiwi uses 3 omniwheels at 120° spacing for holonomic motion.
+# Given desired body velocity (vx, vy, ω), compute wheel velocities:
+#
+#   wheel_vel[i] = (1/r) * (-sin(α[i])*vx + cos(α[i])*vy + R*ω)
+#
+# Where:
+#   r = 0.05 m (wheel radius)
+#   R = 0.125 m (robot base radius)
+#   α = [π/2, π/2 + 2π/3, π/2 + 4π/3] (wheel angles: left, right, back)
+
+const LEKIWI_WHEEL_RADIUS = 0.05       # meters
+const LEKIWI_BASE_RADIUS = 0.125       # meters
+const LEKIWI_WHEEL_ANGLES = [π / 2, π / 2 + 2π / 3, π / 2 + 4π / 3]
+
+"""
+    body_to_wheel_velocities(vx, vy, omega) -> Vector{Float64}
+
+Convert body velocities to wheel velocities for LeKiwi's 3-wheel omnidrive.
+
+# Arguments
+- `vx`: Forward/backward velocity in m/s (positive = forward)
+- `vy`: Strafe velocity in m/s (positive = left)
+- `omega`: Angular velocity in rad/s (positive = counter-clockwise)
+
+# Returns
+- Vector of 3 wheel velocities in rad/s: [left, right, back]
+"""
+function body_to_wheel_velocities(vx::Float64, vy::Float64, omega::Float64)
+    wheel_vels = zeros(3)
+    for i in 1:3
+        α = LEKIWI_WHEEL_ANGLES[i]
+        wheel_vels[i] = (1 / LEKIWI_WHEEL_RADIUS) * (
+            -sin(α) * vx + cos(α) * vy + LEKIWI_BASE_RADIUS * omega
+        )
+    end
+    return wheel_vels
+end

@@ -684,6 +684,8 @@ function handle_control_connection!(
                     # Add WebSocket reference for per-client mapping
                     data["_ws"] = ws
                     submit_command!(instance, data)
+                elseif cmd == "set_base_velocity"
+                    submit_command!(instance, data)
                 end
             catch e
                 @warn "Failed to parse control message" exception = e
