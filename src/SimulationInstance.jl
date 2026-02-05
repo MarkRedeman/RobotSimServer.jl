@@ -730,11 +730,11 @@ end
 # =============================================================================
 
 """
-    submit_command!(instance::SimulationInstance, command::Dict)
+    submit_command!(instance::SimulationInstance, command::AbstractDict)
 
 Submit a command to be processed by the physics loop.
 """
-function submit_command!(instance::SimulationInstance, command::Dict{String, Any})
+function submit_command!(instance::SimulationInstance, command::AbstractDict)
     if instance.running
         put!(instance.control_channel, command)
     end
