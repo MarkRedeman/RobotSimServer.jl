@@ -93,7 +93,6 @@ mutable struct SimulationInstance
     client_contexts_lock::ReentrantLock
     default_teleop_ctx::Any
     actuator_map::Dict{String, Int}
-    base_controller::Union{BaseVelocityController, Nothing}
     running::Bool
     physics_task::Union{Task, Nothing}
     broadcast_task::Union{Task, Nothing}
@@ -209,12 +208,7 @@ function SimulationInstance(config::RobotConfig, project_root::String;
         project_root = project_root)
     println("  Teleop: $(config.default_leader_type) → $(config.follower_type)")
 
-    # Create base controller for mobile robots
-    base_controller = config.has_mobile_base ?
-                      BaseVelocityController(
-        max_vx = 0.15, max_vy = 0.10, max_omega = 0.8, timeout = 0.5) :
-                      nothing
-    if base_controller !== nothing
+    if config.has_mobile_base
         println("  Mobile base: enabled")
     end
 
@@ -232,7 +226,6 @@ function SimulationInstance(config::RobotConfig, project_root::String;
         ReentrantLock(),
         default_teleop_ctx,
         actuator_map,
-        base_controller,
         false,  # running
         nothing,  # physics_task
         nothing,  # broadcast_task
@@ -381,15 +374,6 @@ function physics_loop!(instance::SimulationInstance)
             # Process pending commands
             process_commands!(instance)
 
-            # Apply base velocities for mobile robots
-            if instance.base_controller !== nothing
-                vx, vy, omega = get_velocities(instance.base_controller)
-                wheel_vels = body_to_wheel_velocities(vx, vy, omega)
-                instance.data.ctrl[1] = wheel_vels[1]
-                instance.data.ctrl[2] = wheel_vels[2]
-                instance.data.ctrl[3] = wheel_vels[3]
-            end
-
             # Step physics
             step!(instance.model, instance.data)
 
@@ -428,19 +412,47 @@ function process_commands!(instance::SimulationInstance)
 
             # Apply command
             apply_joint_command!(instance, joints, teleop_ctx)
-        elseif cmd == "set_base_velocity" && instance.base_controller !== nothing
+        elseif cmd == "set_base_velocity" && instance.config.has_mobile_base
+            # Convenience command: convert body velocity to wheel velocities
+            # This is syntactic sugar for set_joints_state with wheel actuators
             vx = Float64(get(raw, "vx", 0.0))
             vy = Float64(get(raw, "vy", 0.0))
             omega = Float64(get(raw, "omega", 0.0))
-            update_from_websocket!(instance.base_controller, vx, vy, omega)
+            apply_base_velocity!(instance, vx, vy, omega)
         end
     end
+end
+
+"""
+    apply_base_velocity!(instance::SimulationInstance, vx, vy, omega)
+
+Apply body velocity to wheel actuators (convenience function for mobile bases).
+
+Converts body velocity (vx, vy, omega) to individual wheel velocities using
+omniwheel kinematics and sets the wheel actuator control values directly.
+
+This is equivalent to calling set_joints_state with the computed wheel velocities.
+"""
+function apply_base_velocity!(instance::SimulationInstance, vx::Float64, vy::Float64,
+        omega::Float64)
+    wheel_vels = body_to_wheel_velocities(vx, vy, omega)
+
+    # Set wheel actuator controls directly (indices 1, 2, 3 for LeKiwi)
+    # These are velocity actuators, so values are in rad/s
+    instance.data.ctrl[1] = wheel_vels[1]  # left wheel
+    instance.data.ctrl[2] = wheel_vels[2]  # right wheel
+    instance.data.ctrl[3] = wheel_vels[3]  # back wheel
 end
 
 """
     apply_joint_command!(instance::SimulationInstance, joints::AbstractDict, teleop_ctx)
 
 Apply joint commands to the simulation.
+
+Handles different actuator types:
+- Position actuators: values in degrees, converted to radians
+- Velocity actuators (wheels): values in rad/s, used directly
+- Slide joints: values in meters, used directly
 """
 function apply_joint_command!(instance::SimulationInstance, joints::AbstractDict, teleop_ctx)
     joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
@@ -449,15 +461,34 @@ function apply_joint_command!(instance::SimulationInstance, joints::AbstractDict
     for (name, val) in mapped_joints
         if haskey(instance.actuator_map, name)
             idx = instance.actuator_map[name]
-            # Check joint type for conversion
-            joint_id = mj_name2id(instance.model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
-            if joint_id >= 0 && instance.model.jnt_type[joint_id + 1] == 2  # mjJNT_SLIDE
-                instance.data.ctrl[idx] = val  # Already in meters
+
+            # Determine how to interpret the value based on actuator type
+            if is_velocity_actuator(name)
+                # Velocity actuators (e.g., wheel motors): value is already in rad/s
+                instance.data.ctrl[idx] = val
             else
-                instance.data.ctrl[idx] = deg2rad(val)
+                # Position actuators: check if it's a slide joint or revolute
+                joint_id = mj_name2id(instance.model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
+                if joint_id >= 0 && instance.model.jnt_type[joint_id + 1] == 2  # mjJNT_SLIDE
+                    instance.data.ctrl[idx] = val  # Already in meters
+                else
+                    instance.data.ctrl[idx] = deg2rad(val)  # Degrees to radians
+                end
             end
         end
     end
+end
+
+"""
+    is_velocity_actuator(name::AbstractString) -> Bool
+
+Check if an actuator is a velocity-controlled actuator (e.g., wheel motors).
+
+Uses naming convention: actuators with "wheel" in the name are velocity actuators.
+This is a pragmatic approach that works for LeKiwi and similar mobile robots.
+"""
+function is_velocity_actuator(name::AbstractString)
+    return occursin("wheel", lowercase(name))
 end
 
 # =============================================================================
