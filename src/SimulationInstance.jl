@@ -412,11 +412,11 @@ function process_commands!(instance::SimulationInstance)
 end
 
 """
-    apply_joint_command!(instance::SimulationInstance, joints::Dict, teleop_ctx)
+    apply_joint_command!(instance::SimulationInstance, joints::AbstractDict, teleop_ctx)
 
 Apply joint commands to the simulation.
 """
-function apply_joint_command!(instance::SimulationInstance, joints::Dict, teleop_ctx)
+function apply_joint_command!(instance::SimulationInstance, joints::AbstractDict, teleop_ctx)
     joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
     mapped_joints = map_joints(teleop_ctx, joints_float, instance.model, instance.data)
 
