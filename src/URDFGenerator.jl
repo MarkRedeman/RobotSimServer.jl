@@ -295,8 +295,8 @@ function _resolve_includes_recursive!(node::EzXML.Node, base_dir::String)
         # Insert all children of the included mujoco root before the include element
         parent = EzXML.parentnode(include_node)
         for child in EzXML.eachelement(included_root)
-            # Clone and insert before the include
-            cloned = _deep_clone(child)
+            # Clone with path rewriting relative to included file's directory
+            cloned = _deep_clone_with_base_dir(child, included_base_dir)
             EzXML.linkprev!(include_node, cloned)
         end
 
@@ -308,6 +308,306 @@ function _resolve_includes_recursive!(node::EzXML.Node, base_dir::String)
     for child in EzXML.eachelement(node)
         _resolve_includes_recursive!(child, base_dir)
     end
+end
+
+"""
+    _deep_clone_with_base_dir(node::EzXML.Node, base_dir::String) -> EzXML.Node
+
+Create a deep clone of an XML node, converting relative file paths to absolute paths.
+This is used when inlining included files to preserve correct path resolution.
+"""
+function _deep_clone_with_base_dir(node::EzXML.Node, base_dir::String)
+    # Create new element with same name
+    new_node = EzXML.ElementNode(EzXML.nodename(node))
+
+    # Copy attributes, making file paths absolute
+    for attr in EzXML.attributes(node)
+        key = EzXML.nodename(attr)
+        value = EzXML.nodecontent(attr)
+
+        # Convert relative file paths to absolute
+        if key == "file" && !isempty(value) && !isabspath(value)
+            value = normpath(joinpath(base_dir, value))
+        end
+
+        new_node[key] = value
+    end
+
+    # Recursively clone children
+    for child in EzXML.eachelement(node)
+        cloned_child = _deep_clone_with_base_dir(child, base_dir)
+        EzXML.link!(new_node, cloned_child)
+    end
+
+    return new_node
+end
+
+# =============================================================================
+# Model Asset Resolution (for <attach> directive support)
+# =============================================================================
+
+"""
+    ModelAsset
+
+Information about a model asset defined in MJCF <asset> section.
+"""
+struct ModelAsset
+    name::String
+    file::String           # Original file path
+    resolved_path::String  # Absolute path to the model file
+    base_dir::String       # Directory containing the model file
+end
+
+"""
+    extract_model_assets(doc::EzXML.Document, base_dir::String) -> Dict{String, ModelAsset}
+
+Extract model asset definitions from MJCF document.
+Returns a dictionary mapping model names to their file paths.
+"""
+function extract_model_assets(doc::EzXML.Document, base_dir::String)
+    models = Dict{String, ModelAsset}()
+    root = EzXML.root(doc)
+
+    # Find all asset sections
+    for asset_node in EzXML.findall("//asset", root)
+        for child in EzXML.eachelement(asset_node)
+            if EzXML.nodename(child) == "model"
+                name = get_attr(child, "name", "")
+                file = get_attr(child, "file", "")
+
+                if !isempty(name) && !isempty(file)
+                    # File path may already be absolute if it came from an included file
+                    if isabspath(file)
+                        resolved_path = normpath(file)
+                    else
+                        resolved_path = normpath(joinpath(base_dir, file))
+                    end
+                    model_base_dir = dirname(resolved_path)
+                    models[name] = ModelAsset(name, file, resolved_path, model_base_dir)
+                end
+            end
+        end
+    end
+
+    return models
+end
+
+"""
+    resolve_attach_directives!(doc::EzXML.Document, base_dir::String)
+
+Resolve <attach model="..." body="..." prefix="..."/> directives in MJCF.
+Replaces attach elements with the actual body hierarchy from the referenced model.
+Also merges <default> sections from attached models to ensure proper property inheritance.
+"""
+function resolve_attach_directives!(doc::EzXML.Document, base_dir::String)
+    root = EzXML.root(doc)
+
+    # First, extract model assets
+    models = extract_model_assets(doc, base_dir)
+
+    if isempty(models)
+        return  # No models to attach
+    end
+
+    # Find and process all attach elements, passing doc for defaults merging
+    _resolve_attach_recursive!(doc, root, models)
+end
+
+function _resolve_attach_recursive!(
+        doc::EzXML.Document, node::EzXML.Node, models::Dict{String, ModelAsset})
+    # Find all attach elements in this node
+    attach_nodes = EzXML.Node[]
+    for child in EzXML.eachelement(node)
+        if EzXML.nodename(child) == "attach"
+            push!(attach_nodes, child)
+        end
+    end
+
+    # Process each attach element
+    for attach_node in attach_nodes
+        model_name = get_attr(attach_node, "model", "")
+        body_name = get_attr(attach_node, "body", "")
+        prefix = get_attr(attach_node, "prefix", "")
+
+        if isempty(model_name)
+            @warn "Attach element missing 'model' attribute"
+            EzXML.unlink!(attach_node)
+            continue
+        end
+
+        if !haskey(models, model_name)
+            @warn "Model not found for attach: $model_name"
+            EzXML.unlink!(attach_node)
+            continue
+        end
+
+        model_asset = models[model_name]
+
+        if !isfile(model_asset.resolved_path)
+            @warn "Model file not found: $(model_asset.resolved_path)"
+            EzXML.unlink!(attach_node)
+            continue
+        end
+
+        # Parse the model file
+        model_doc = EzXML.readxml(model_asset.resolved_path)
+        model_root = EzXML.root(model_doc)
+
+        # Recursively resolve includes and attach in the model
+        _resolve_includes_recursive!(model_root, model_asset.base_dir)
+
+        # Also resolve nested models in the attached model
+        nested_models = extract_model_assets(model_doc, model_asset.base_dir)
+        if !isempty(nested_models)
+            _resolve_attach_recursive!(model_doc, model_root, nested_models)
+        end
+
+        # Merge defaults from the attached model into the main document
+        # This ensures joint/geom class defaults are available for URDF generation
+        _merge_defaults_from_model!(doc, model_root, model_asset.base_dir)
+
+        # Find the body to attach (or use worldbody children if body is empty)
+        bodies_to_insert = EzXML.Node[]
+
+        if isempty(body_name)
+            # Attach all worldbody children
+            for wb in EzXML.findall("//worldbody", model_root)
+                for child in EzXML.eachelement(wb)
+                    if EzXML.nodename(child) == "body"
+                        push!(bodies_to_insert, child)
+                    end
+                end
+            end
+        else
+            # Find the specific body by name
+            for wb in EzXML.findall("//worldbody", model_root)
+                body = _find_body_by_name(wb, body_name)
+                if body !== nothing
+                    push!(bodies_to_insert, body)
+                    break
+                end
+            end
+        end
+
+        if isempty(bodies_to_insert)
+            @warn "Body '$body_name' not found in model '$model_name'"
+            EzXML.unlink!(attach_node)
+            continue
+        end
+
+        # Get parent of attach node (should be a body)
+        parent_node = EzXML.parentnode(attach_node)
+
+        # Clone and insert bodies, applying prefix to names if specified
+        for body in bodies_to_insert
+            cloned = _deep_clone_with_prefix(body, prefix, model_asset.base_dir)
+            EzXML.linkprev!(attach_node, cloned)
+        end
+
+        # Remove the attach element
+        EzXML.unlink!(attach_node)
+    end
+
+    # Recursively process children (for nested bodies)
+    for child in EzXML.eachelement(node)
+        _resolve_attach_recursive!(doc, child, models)
+    end
+end
+
+"""
+    _merge_defaults_from_model!(main_doc::EzXML.Document, model_root::EzXML.Node, model_base_dir::String)
+
+Merge <default> sections from an attached model into the main document.
+This ensures that joint and geom defaults from the attached model are available
+for property resolution during URDF generation.
+"""
+function _merge_defaults_from_model!(
+        main_doc::EzXML.Document, model_root::EzXML.Node, model_base_dir::String)
+    main_root = EzXML.root(main_doc)
+
+    # Find default sections in the attached model
+    for model_default in EzXML.findall("default", model_root)
+        # Clone the default section
+        cloned_default = _deep_clone(model_default)
+
+        # Find or create the default section in the main document
+        main_defaults = EzXML.findall("default", main_root)
+
+        if isempty(main_defaults)
+            # No default section in main doc, create one and add the cloned defaults as a child
+            main_default = EzXML.ElementNode("default")
+            EzXML.link!(cloned_default, main_default)
+
+            # Insert after compiler or at beginning of document
+            first_child = nothing
+            for child in EzXML.eachelement(main_root)
+                first_child = child
+                break
+            end
+
+            if first_child !== nothing
+                EzXML.linkprev!(first_child, cloned_default)
+            else
+                EzXML.link!(main_root, cloned_default)
+            end
+        else
+            # Add as a nested default inside the first default section
+            # This preserves the class hierarchy
+            EzXML.link!(main_defaults[1], cloned_default)
+        end
+    end
+end
+
+"""
+    _find_body_by_name(node::EzXML.Node, name::String) -> Union{EzXML.Node, Nothing}
+
+Find a body element by name in the node tree.
+"""
+function _find_body_by_name(node::EzXML.Node, name::String)
+    for child in EzXML.eachelement(node)
+        if EzXML.nodename(child) == "body"
+            if get_attr(child, "name", "") == name
+                return child
+            end
+            # Search recursively
+            result = _find_body_by_name(child, name)
+            if result !== nothing
+                return result
+            end
+        end
+    end
+    return nothing
+end
+
+"""
+    _deep_clone_with_prefix(node::EzXML.Node, prefix::String, model_base_dir::String) -> EzXML.Node
+
+Create a deep clone of an XML node, applying prefix to name attributes
+and adjusting mesh file paths relative to the model's base directory.
+"""
+function _deep_clone_with_prefix(node::EzXML.Node, prefix::String, model_base_dir::String)
+    # Create new element with same name
+    new_node = EzXML.ElementNode(EzXML.nodename(node))
+
+    # Copy attributes, applying prefix to 'name' attribute
+    for attr in EzXML.attributes(node)
+        key = EzXML.nodename(attr)
+        value = EzXML.nodecontent(attr)
+
+        if key == "name" && !isempty(prefix)
+            value = prefix * value
+        end
+
+        new_node[key] = value
+    end
+
+    # Recursively clone children
+    for child in EzXML.eachelement(node)
+        cloned_child = _deep_clone_with_prefix(child, prefix, model_base_dir)
+        EzXML.link!(new_node, cloned_child)
+    end
+
+    return new_node
 end
 
 """
@@ -1191,8 +1491,11 @@ function generate_urdf_from_mjcf(mjcf_path::String, project_root::String = ".")
     # Parse MJCF
     doc = EzXML.readxml(mjcf_path)
 
-    # Resolve includes
+    # Resolve includes first
     resolve_mjcf_includes(doc, base_dir)
+
+    # Resolve <attach> directives (for model references)
+    resolve_attach_directives!(doc, base_dir)
 
     root = EzXML.root(doc)
 
