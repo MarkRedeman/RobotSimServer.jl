@@ -61,8 +61,12 @@ description = "Format all Julia code"
 run = "julia -e 'using JuliaFormatter; format(\".\")'"
 
 [tasks.client]
-description = "Run WebSocket test client"
+description = "Run WebSocket test client (SO101)"
 run = "julia examples/clients/ws_client.jl"
+
+[tasks.client-lekiwi]
+description = "Run LeKiwi teleoperation client (requires unified server)"
+run = "julia examples/clients/teleoperate_lekiwi_client_ws.jl"
 
 # =============================================================================
 # Unified Server Tasks
