@@ -1,24 +1,15 @@
-# Geti Action MuJoCo Simulation Example
+# RobotSimServer.jl
 
-A proof-of-concept demonstrating how to integrate MuJoCo robot arm simulations with [Geti Action](https://geti.ai).
-
-## What is Geti Action?
-
-Geti Action is a local desktop application for robotics researchers and developers to:
-
-1. **Collect teleoperation data** on their own hardware
-2. **Train VLA (Vision-Language-Action) models** locally on their machine
-3. **Deploy optimized models** to robots using Intel silicon
-
-Think "Stable Diffusion WebUI" but for robot training.
+A multi-robot MuJoCo simulation server with WebSocket/ZMQ control, multi-camera streaming, and cross-robot teleoperation. Written in Julia.
 
 ## What is this repository?
 
-This repository provides example MuJoCo simulations that can be controlled via WebSocket, allowing Geti Action to:
+This repository provides a simulation server for controlling robot arms via WebSocket or ZMQ. It supports multiple robot types with:
 
-- Send joint commands to simulated robot arms
-- Receive real-time joint state feedback
-- Stream camera feeds from multiple viewpoints (including gripper-mounted cameras)
+- Joint position control and real-time state feedback
+- Multi-camera streaming (front, side, orbit, gripper, wrist views)
+- Cross-robot teleoperation (e.g., SO101 leader controlling a Franka follower)
+- URDF generation and mesh asset serving for web-based 3D visualization
 
 ## Features
 
@@ -43,8 +34,8 @@ This project uses [mise](https://mise.jdx.dev) for tool version management, envi
 
 ```bash
 # Clone with submodules
-git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
-cd geti-action-mujoco-sim
+git clone --recursive git@github.com:MarkRedeman/RobotSimServer.jl.git
+cd RobotSimServer.jl
 
 # Trust and install tools (installs Julia 1.12.4)
 mise trust && mise install
@@ -86,8 +77,8 @@ If you prefer not to use mise, ensure [Julia](https://julialang.org/downloads/) 
 
 ```bash
 # Clone with submodules
-git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
-cd geti-action-mujoco-sim
+git clone --recursive git@github.com:MarkRedeman/RobotSimServer.jl.git
+cd RobotSimServer.jl
 
 # Install dependencies
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
@@ -561,46 +552,6 @@ config = CaptureConfig(
 
 run_with_capture!(model, data, controller=ctrl!, capture=config)
 ```
-
-## Geti Action Integration
-
-To connect Geti Action to this simulation:
-
-### Using Unified Server (Recommended)
-
-1. Start the unified server:
-   ```bash
-   mise run server
-   ```
-
-2. In Geti Action, configure the connection:
-   - **Control endpoint**: `ws://localhost:8080/so101/control`
-   - **Camera streams**: `ws://localhost:8080/so101/cameras/front`, `ws://localhost:8080/so101/cameras/gripper`
-   - **Leader type** (optional): Add `?leader=so101` to specify the leader robot
-
-3. To control different robots, just change the robot ID in the URL:
-   - SO101: `ws://localhost:8080/so101/control`
-   - Franka: `ws://localhost:8080/franka/control?leader=so101`
-   - LeKiwi: `ws://localhost:8080/lekiwi/control`
-
-### Using Individual Examples
-
-1. Start a WebSocket simulation:
-   ```bash
-   julia --project=. -t 4 examples/so101/websocket_sim.jl
-   ```
-
-2. In Geti Action, configure the connection:
-   - **Control endpoint**: `ws://localhost:8081`
-   - **Camera streams**: `ws://localhost:8082` (front), `ws://localhost:8085` (gripper), etc.
-
-### What Geti Action Can Do
-
-- Send teleoperation commands from a leader arm
-- Record synchronized camera feeds
-- Collect training data from the simulated environment
-- Train VLA models on collected data
-- Deploy models back to simulation for testing
 
 ## Dependencies
 

@@ -4,11 +4,11 @@ This document provides guidance for AI assistants and LLMs working with this cod
 
 ## Project Overview
 
-**Name:** Geti Action MuJoCo Simulation Example
+**Name:** RobotSimServer.jl
 
-**Purpose:** A proof-of-concept demonstrating how to integrate MuJoCo robot arm
-simulations with Geti Action - a local desktop application for robotics researchers
-to collect teleoperation data, train VLA models, and deploy to robots.
+**Purpose:** A multi-robot MuJoCo simulation server written in Julia, providing
+WebSocket/ZMQ control, multi-camera streaming, cross-robot teleoperation, URDF
+generation, and asset serving.
 
 **Language:** Julia
 
