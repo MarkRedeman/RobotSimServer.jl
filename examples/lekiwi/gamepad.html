@@ -373,7 +373,7 @@
                 <div class="status-dot" id="wsDot"></div>
                 <span id="wsStatus">WebSocket Disconnected</span>
             </div>
-            <div class="controller-name" id="wsUrl">ws://localhost:8081</div>
+            <div class="controller-name" id="wsUrl">ws://localhost:8080/lekiwi/control</div>
         </div>
 
         <!-- Robot Commands -->
@@ -513,7 +513,7 @@
         // =============================================================================
         // Configuration
         // =============================================================================
-        const WS_URL = 'ws://localhost:8081';
+        const WS_URL = 'ws://localhost:8080/lekiwi/control';
         const SEND_RATE_MS = 33;  // ~30Hz
 
         // Velocity limits (matching BaseController.jl defaults)

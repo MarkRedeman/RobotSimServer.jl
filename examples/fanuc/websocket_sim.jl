@@ -1,35 +1,33 @@
 # Fanuc Industrial Robot Simulation with WebSocket Control and Multi-Camera Capture
 #
 # This script runs a MuJoCo simulation of Fanuc industrial robot arms with:
-# - WebSocket server for external joint control (port 8081)
+# - Unified WebSocket server on port 8080 with path-based routing
 # - Multi-camera capture (WebSocket streams)
 # - Interactive 3D visualization
 # - Support for 19 robot variants (5-12 DOF)
 #
-# IK-BASED CONTROL: Accepts SO101 joint commands and uses inverse kinematics to
-# map end-effector positions between robots. This provides natural motion mapping
-# despite different robot kinematics (joint axes, link lengths, etc.).
+# IK-BASED CONTROL: Uses the TeleoperatorMapping system to accept leader robot
+# joint commands and map them via inverse kinematics. This provides natural motion
+# mapping despite different robot kinematics (joint axes, link lengths, etc.).
 #
 # The mapping works as follows:
-# 1. Apply SO101 joint angles to a "shadow" SO101 model
-# 2. Compute SO101 gripper position via forward kinematics
-# 3. Scale position from SO101 workspace to Fanuc workspace
+# 1. Apply leader joint angles to a "shadow" leader model
+# 2. Compute leader gripper position via forward kinematics
+# 3. Scale position from leader workspace to Fanuc workspace
 # 4. Solve inverse kinematics to get Fanuc joint angles
 # 5. Apply to Fanuc actuators
 #
 # Usage:
-#   julia --project=. -t 4 examples/fanuc/websocket_sim.jl [robot_name]
+#   julia --project=. -t 4 examples/fanuc/websocket_sim.jl [robot_name] [--leader=TYPE]
 #
 # Examples:
-#   julia --project=. -t 4 examples/fanuc/websocket_sim.jl           # Default: m10ia
+#   julia --project=. -t 4 examples/fanuc/websocket_sim.jl           # Default: m10ia, leader: SO101
 #   julia --project=. -t 4 examples/fanuc/websocket_sim.jl crx10ial  # CRX collaborative robot
 #   julia --project=. -t 4 examples/fanuc/websocket_sim.jl m900ib700 # Large 12-DOF robot
-#
-# Connect with test client:
-#   julia --project=. examples/clients/ws_client.jl
+#   julia --project=. -t 4 examples/fanuc/websocket_sim.jl m10ia --leader=trossen
 #
 # WebSocket API:
-#   Commands (SO101 format - mapped via IK):
+#   Commands (leader robot format - mapped via IK):
 #     {"command": "set_joints_state", "joints": {"shoulder_pan": 45.0, "shoulder_lift": -30.0, ...}}
 #   All values in degrees.
 #
@@ -41,9 +39,12 @@ using MuJoCo.LibMuJoCo
 
 # Load shared modules
 include("../../src/SceneBuilder.jl")
-include("../../src/WebSocketServer.jl")
+include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/capture/Capture.jl")
+include("../../src/RobotTypes.jl")
 include("../../src/Kinematics.jl")
+include("../../src/TeleoperatorMapping.jl")
+include("../../src/CLIUtils.jl")
 
 # --- Robot Discovery ---
 function discover_robots()
@@ -65,11 +66,16 @@ const ROBOTS = discover_robots()
 const DEFAULT_ROBOT = "m10ia"  # Classic yellow Fanuc industrial robot
 
 # Get robot from command line argument or use default
-robot = if length(ARGS) > 0
-    ARGS[1]
-else
-    DEFAULT_ROBOT
+# Filter out --leader= and other flag arguments
+function get_robot_from_args(args, default)
+    for arg in args
+        if !startswith(arg, "--")
+            return arg
+        end
+    end
+    return default
 end
+robot = get_robot_from_args(ARGS, DEFAULT_ROBOT)
 
 # Validate robot selection
 if robot ∉ ROBOTS
@@ -132,11 +138,11 @@ println("Loaded model with $(model.nq) DOF, $(model.nu) actuators")
 
 # --- Joint and Actuator Mapping ---
 # Get joint names from the model (joint_1, joint_2, etc.)
-joint_names = String[]
+joint_names_list = String[]
 for i in 0:(model.njnt - 1)
     name = unsafe_string(mj_id2name(model, Int32(LibMuJoCo.mjOBJ_JOINT), i))
     if !isempty(name) && startswith(name, "joint_")
-        push!(joint_names, name)
+        push!(joint_names_list, name)
     end
 end
 
@@ -156,135 +162,64 @@ for (i, act_name) in enumerate(actuator_names)
     end
 end
 
-println("Joints: ", join(joint_names, ", "))
+println("Joints: ", join(joint_names_list, ", "))
 
-# --- IK-Based Cross-Robot Control ---
-# Instead of direct joint mapping (which doesn't work well due to different kinematics),
-# we use inverse kinematics to map end-effector positions between robots:
-#
-# 1. Load SO101 as a "shadow" model for forward kinematics
-# 2. When SO101 joint commands arrive:
-#    a. Apply joints to SO101 shadow model
-#    b. Compute SO101 gripper position via FK
-#    c. Scale position from SO101 workspace to Fanuc workspace
-#    d. Solve IK to get Fanuc joint angles
-#    e. Apply to Fanuc actuators
-#
-# This provides natural motion mapping despite different robot kinematics.
+# --- Teleoperation Configuration ---
+const DefaultLeaderType = parse_leader_type(ARGS; default = SO101)
+const FollowerType = FanucArm
+const project_root = joinpath(@__DIR__, "..", "..")
 
-# Load SO101 shadow model for FK (just the robot, no scene objects)
-const SO101_XML = joinpath(@__DIR__, "..", "..", "robots", "SO-ARM100",
-    "Simulation", "SO101", "so101_new_calib.xml")
-println("Loading SO101 shadow model from: $SO101_XML")
-
-const so101_model = load_model(SO101_XML)
-const so101_data = init_data(so101_model)
-
-# SO101 joint name -> qpos index mapping
-const SO101_JOINTS = Dict{String, Int}(
-    "shoulder_pan" => 1,
-    "shoulder_lift" => 2,
-    "elbow_flex" => 3,
-    "wrist_flex" => 4,
-    "wrist_roll" => 5,
-    "gripper" => 6
-)
-
-# Compute home positions for workspace scaling
-const SO101_HOME = get_home_position(so101_model, so101_data, "gripper")
-const FANUC_HOME = get_home_position(model, data, "link_6")
-const WORKSPACE_SCALE = norm(FANUC_HOME) / norm(SO101_HOME)
-
-println("SO101 home position: $SO101_HOME ($(round(norm(SO101_HOME), digits=3))m from origin)")
-println("Fanuc home position: $FANUC_HOME ($(round(norm(FANUC_HOME), digits=3))m from origin)")
-println("Workspace scale factor: $(round(WORKSPACE_SCALE, digits=2))x")
-
-# IK configuration - tuned for real-time control
-const IK_CONFIG = IKConfig(
-    max_iter = 50,      # Fewer iterations for real-time (30fps)
-    tol = 0.005,        # 5mm tolerance
-    step_size = 0.5,
-    damping = 0.01
-)
-
-# Fanuc joint name -> SO101 name for state reporting
-const FANUC_TO_SO101_MAP = Dict{String, String}(
-    "joint_1" => "shoulder_pan",
-    "joint_2" => "shoulder_lift",
-    "joint_3" => "elbow_flex",
-    "joint_4" => "wrist_flex",
-    "joint_5" => "wrist_flex2",   # Extra DOF, reported with unique name
-    "joint_6" => "wrist_roll"
-)
-
-# --- WebSocket Server ---
-server = WebSocketControlServer(port = 8081, fps = 30.0)
-
-# Robot-specific: how to get joint state (in degrees)
-# Reports using SO101 joint names for compatibility, plus any unmapped Fanuc joints
-function get_joint_state(model, data)
-    state = Dict{String, Float64}()
-    for name in joint_names
-        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), name)
-        if joint_id >= 0
-            addr = model.jnt_qposadr[joint_id + 1] + 1
-            val_deg = rad2deg(data.qpos[addr])
-
-            # Use SO101 name if available, otherwise use Fanuc name
-            report_name = get(FANUC_TO_SO101_MAP, name, name)
-            state[report_name] = val_deg
-        end
+# Create a context factory for per-client teleop contexts
+function create_client_context(leader_type)
+    resolved_type = if leader_type isa Type
+        leader_type
+    elseif leader_type isa AbstractString
+        get(ROBOT_TYPE_MAP, lowercase(leader_type), DefaultLeaderType)
+    else
+        DefaultLeaderType
     end
-    return state
+    println("Created teleop context: $(resolved_type) → $(FollowerType)")
+    return create_teleop_context(resolved_type, FollowerType, model, data;
+        project_root = project_root)
 end
 
-# Robot-specific: how to apply joint commands using IK-based mapping
-# 1. Apply SO101 joints to shadow model
-# 2. Compute SO101 gripper position via FK
-# 3. Scale to Fanuc workspace
-# 4. Solve IK for Fanuc joint angles
-# 5. Apply to Fanuc actuators
-function apply_joint_command!(fanuc_data, actuator_map_unused, joints)
-    # Step 1: Apply joints to SO101 shadow model (degrees -> radians)
-    for (name, val) in joints
-        name_str = String(name)
-        if haskey(SO101_JOINTS, name_str)
-            idx = SO101_JOINTS[name_str]
-            so101_data.qpos[idx] = deg2rad(Float64(val))
-        end
-    end
+# Default context for fallback
+const default_teleop_ctx = create_teleop_context(
+    DefaultLeaderType, FollowerType, model, data;
+    project_root = project_root)
+println(describe(default_teleop_ctx))
 
-    # Step 2: Compute SO101 gripper position via FK
-    so101_pos = forward_kinematics(so101_model, so101_data, "gripper")
+# --- Unified WebSocket Server ---
+server = UnifiedServer(port = 8080, robot = "fanuc/$(robot)", fps = 30.0)
 
-    # Step 3: Scale position to Fanuc workspace
-    target_pos = scale_position(so101_pos, SO101_HOME, FANUC_HOME)
+# Enable per-client leader types via ?leader=X query parameter
+set_context_factory!(server, create_client_context, DefaultLeaderType)
 
-    # Step 4: Solve IK for Fanuc joint angles
-    # Note: We work on a copy of qpos to avoid corrupting the Fanuc simulation state
-    # during IK iterations. After IK converges, we apply to ctrl.
-    ik_data = init_data(model)
-    ik_data.qpos .= fanuc_data.qpos  # Start from current position for continuity
+# Robot-specific: how to get joint state (in leader format for compatibility)
+function get_joint_state(model, data, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+    return get_state_for_leader(teleop_ctx, model, data)
+end
 
-    result = inverse_kinematics!(model, ik_data, "link_6", target_pos; config = IK_CONFIG)
+# Robot-specific: how to apply joint commands using teleop mapping
+# Uses TeleoperatorMapping to convert leader joints -> Fanuc joints via IK
+function apply_joint_command!(fanuc_data, actuator_map_unused, joints, ctx = nothing)
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+    joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
+    mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
 
-    # Step 5: Apply computed joint angles to Fanuc actuators
-    # Use the first 6 joints (or however many the robot has)
+    # Apply computed joint angles to Fanuc actuators
     num_joints = min(6, model.nu)
     for i in 1:num_joints
-        fanuc_data.ctrl[i] = ik_data.qpos[i]
-    end
-
-    # Debug output (occasionally)
-    if rand() < 0.01  # ~1% of the time
-        @info "IK mapping" so101_pos=round.(so101_pos, digits = 3) target_pos=round.(
-            target_pos, digits = 3) converged=result.success error_mm=round(
-            result.final_error * 1000, digits = 1) iters=result.iterations
+        joint_name = "joint_$i"
+        if haskey(mapped_joints, joint_name)
+            fanuc_data.ctrl[i] = deg2rad(mapped_joints[joint_name])
+        end
     end
 end
 
 # Start WebSocket server
-start_server!(server, get_joint_state)
+start!(server, get_joint_state)
 
 # --- Controller Function ---
 function ctrl!(m, d)
@@ -320,7 +255,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8082)
+            output = WebSocketOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -329,7 +264,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8083)
+            output = WebSocketOutput(server = server)
         ),
         # Orbit camera: rotating external view
         CameraSpec(
@@ -340,31 +275,52 @@ capture_config = CaptureConfig(
             elevation = -30.0,
             orbiting = true,
             orbit_speed = 30.0,
-            output = WebSocketOutput(port = 8084)
+            output = WebSocketOutput(server = server)
         ),
         # Gripper camera: first-person view from the end-effector
         CameraSpec(
             name = "gripper",
             mode = :fixed,
             model_camera = "gripper_cam",
-            output = WebSocketOutput(port = 8085)
+            output = WebSocketOutput(server = server)
         )
     ]
 )
+
+# Register camera endpoints with the unified server
+for cam in capture_config.cameras
+    if cam.output isa WebSocketOutput && cam.output.server !== nothing
+        register_camera!(server, cam.name)
+    end
+end
 
 # --- Run Visualization ---
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("Starting Fanuc $robot simulation with IK-based control...")
-println("WebSocket control:  ws://localhost:8081")
-println("Camera streams:     ws://localhost:8082 (front), 8083 (side), 8084 (orbit), 8085 (gripper)")
-println()
-println("IK-Based Mapping: SO101 joint commands → FK → scale → IK → Fanuc joints")
-println("Accepts SO101 joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper")
-println("Workspace scaling: $(round(WORKSPACE_SCALE, digits=2))x (SO101 → Fanuc)")
-println()
-println("Press 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
+# Print banner with teleop info
+leader_name = get_robot_name(DefaultLeaderType)
+scale_factor = round(workspace_scale(default_teleop_ctx), digits = 2)
+
+println("\n" * "=" ^ 70)
+println("Fanuc Industrial Robot Simulation - $(uppercase(robot))")
+println("=" ^ 70)
+println("\nWebSocket Endpoints (all on port 8080):")
+println("  Control:       ws://localhost:8080/fanuc/$(robot)/control")
+println("  Control:       ws://localhost:8080/fanuc/$(robot)/control?leader=<type>")
+println("  Front camera:  ws://localhost:8080/fanuc/$(robot)/cameras/front")
+println("  Side camera:   ws://localhost:8080/fanuc/$(robot)/cameras/side")
+println("  Orbit camera:  ws://localhost:8080/fanuc/$(robot)/cameras/orbit")
+println("  Gripper cam:   ws://localhost:8080/fanuc/$(robot)/cameras/gripper")
+println("\nTeleoperation:")
+println("  Leader type:       $(leader_name) ($(DefaultLeaderType))")
+println("  Mapping strategy:  $(typeof(default_teleop_ctx.strategy))")
+println("  Workspace scale:   $(scale_factor)x ($(leader_name) -> Fanuc)")
+println("\nPer-client leader type support:")
+println("  Default (CLI):     --leader=so101")
+println("  Per-connection:    ?leader=so101, ?leader=trossen, ?leader=lekiwi")
+println("=" ^ 70)
+println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,
     controller = ctrl!,

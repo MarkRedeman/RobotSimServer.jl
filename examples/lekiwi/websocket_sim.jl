@@ -1,19 +1,18 @@
 # LeKiwi Mobile Robot Simulation with WebSocket Control and Multi-Camera Capture
 #
 # This script runs a MuJoCo simulation of the LeKiwi mobile manipulator with:
-# - WebSocket server for external arm control (port 8081)
+# - Unified WebSocket server on port 8080 with path-based routing
 # - Keyboard control for mobile base (WASD + QE for strafing, Shift for speed boost)
 # - WebSocket base velocity commands (set_base_velocity)
 # - Multi-camera capture (WebSocket streams)
 # - Built-in front and wrist cameras
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
+# - TeleoperatorMapping system for cross-robot compatibility
 #
-# The arm accepts SO101-compatible joint names for cross-robot compatibility:
-#   shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
-#
-# These are mapped internally to LeKiwi's native names:
-#   Rotation, Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Jaw
+# The arm accepts joint names based on the --leader flag:
+#   --leader=so101  (default): shoulder_pan, shoulder_lift, elbow_flex, etc.
+#   --leader=lekiwi: Rotation, Pitch, Elbow, Wrist_Pitch, Wrist_Roll, Jaw
 #
 # Keyboard Controls (mobile base):
 #   W/S - Forward/backward
@@ -23,6 +22,7 @@
 #
 # Usage:
 #   julia --project=. -t 4 examples/lekiwi/websocket_sim.jl
+#   julia --project=. -t 4 examples/lekiwi/websocket_sim.jl --leader=lekiwi
 #
 # Connect with test client:
 #   julia --project=. examples/clients/ws_client.jl
@@ -32,9 +32,13 @@ using MuJoCo.LibMuJoCo
 
 # Load shared modules
 include("../../src/SceneBuilder.jl")
-include("../../src/WebSocketServer.jl")
+include("../../src/UnifiedWebSocketServer.jl")
 include("../../src/BaseController.jl")
 include("../../src/capture/Capture.jl")
+include("../../src/RobotTypes.jl")
+include("../../src/Kinematics.jl")
+include("../../src/TeleoperatorMapping.jl")
+include("../../src/CLIUtils.jl")
 
 # ============================================================================
 # Scene Setup
@@ -44,7 +48,7 @@ println("Loading model from: $xml_path")
 
 # Generate cubes around the robot, within arm reach
 # LeKiwi arm has similar reach to SO101 (~0.35m)
-cubes = generate_cubes(50, radius_min = 0.15, radius_max = 0.40, z = 0.08)
+cubes = generate_cubes(0, radius_min = 0.15, radius_max = 0.40, z = 0.08)
 
 # Build scene with cubes (cameras are already in the XML)
 model, data = build_scene(xml_path, cubes)
@@ -68,37 +72,34 @@ actuator_names = [unsafe_string(mj_id2name(model, Int32(LibMuJoCo.mjOBJ_ACTUATOR
 actuator_map = Dict(name => i for (i, name) in enumerate(actuator_names))
 println("Available actuators: ", actuator_names)
 
-# Arm actuator names (native LeKiwi names)
-const ARM_ACTUATORS = ["Rotation", "Pitch", "Elbow", "Wrist_Pitch", "Wrist_Roll", "Jaw"]
+# --- Teleoperation Configuration ---
+const DefaultLeaderType = parse_leader_type(ARGS; default = SO101)  # Default SO101 for compat
+const FollowerType = LeKiwiArm
+const project_root = joinpath(@__DIR__, "..", "..")
 
-# Joint name mapping: SO101-compatible names -> LeKiwi native names
-# This allows clients to use the same joint names across different robots
-const JOINT_NAME_MAP = Dict(
-    # SO101-compatible names -> LeKiwi native names
-    "shoulder_pan" => "Rotation",
-    "shoulder_lift" => "Pitch",
-    "elbow_flex" => "Elbow",
-    "wrist_flex" => "Wrist_Pitch",
-    "wrist_roll" => "Wrist_Roll",
-    "gripper" => "Jaw",
-    # Also accept native LeKiwi names directly
-    "Rotation" => "Rotation",
-    "Pitch" => "Pitch",
-    "Elbow" => "Elbow",
-    "Wrist_Pitch" => "Wrist_Pitch",
-    "Wrist_Roll" => "Wrist_Roll",
-    "Jaw" => "Jaw"
-)
+# Create a context factory for per-client teleop contexts
+# This allows each WebSocket client to have their own leader type
+function create_client_context(leader_type)
+    # Handle both Type and String inputs (query param comes as string)
+    resolved_type = if leader_type isa Type
+        leader_type
+    elseif leader_type isa AbstractString
+        get(ROBOT_TYPE_MAP, lowercase(leader_type), DefaultLeaderType)
+    else
+        DefaultLeaderType
+    end
 
-# Reverse mapping for state broadcast (native -> SO101-compatible)
-const JOINT_NAME_REVERSE_MAP = Dict(
-    "Rotation" => "shoulder_pan",
-    "Pitch" => "shoulder_lift",
-    "Elbow" => "elbow_flex",
-    "Wrist_Pitch" => "wrist_flex",
-    "Wrist_Roll" => "wrist_roll",
-    "Jaw" => "gripper"
-)
+    ctx = create_teleop_context(resolved_type, FollowerType, model, data;
+        project_root = project_root)
+    println("Created teleop context: $(resolved_type) → $(FollowerType)")
+    return ctx
+end
+
+# Create default context for legacy/fallback use
+const default_teleop_ctx = create_teleop_context(
+    DefaultLeaderType, FollowerType, model, data;
+    project_root = project_root)
+println(describe(default_teleop_ctx))
 
 # ============================================================================
 # Omniwheel Kinematics
@@ -117,6 +118,29 @@ const WHEEL_RADIUS = 0.05       # meters
 const BASE_RADIUS = 0.125       # meters
 const WHEEL_ANGLES = [π / 2, π / 2 + 2π / 3, π / 2 + 4π / 3]
 
+# Wheel joint names and their corresponding state names for broadcasting
+const WHEEL_JOINT_NAMES = [
+    "base_left_wheel_joint",
+    "base_right_wheel_joint",
+    "base_back_wheel_joint"
+]
+const WHEEL_STATE_NAMES = [
+    "left_wheel_velocity",
+    "right_wheel_velocity",
+    "back_wheel_velocity"
+]
+
+# Build wheel joint -> qvel index map (populated after model is loaded)
+const wheel_qvel_indices = Dict{String, Int}()
+for joint_name in WHEEL_JOINT_NAMES
+    joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), joint_name)
+    if joint_id >= 0
+        # jnt_dofadr is 0-indexed in MuJoCo, +1 for Julia array access
+        qvel_addr = model.jnt_dofadr[joint_id + 1]
+        wheel_qvel_indices[joint_name] = qvel_addr + 1  # Store as 1-indexed for Julia
+    end
+end
+
 """
 Compute wheel velocities for desired body velocity (vx, vy, omega).
 Returns (left, right, back) wheel velocities in rad/s.
@@ -133,9 +157,12 @@ function body_to_wheel_velocities(vx::Float64, vy::Float64, omega::Float64)
 end
 
 # ============================================================================
-# WebSocket Server
+# WebSocket Server (Unified - single port with path-based routing)
 # ============================================================================
-server = WebSocketControlServer(port = 8081, fps = 30.0)
+server = UnifiedServer(port = 8080, robot = "lekiwi", fps = 30.0)
+
+# Enable per-client leader types via ?leader=X query parameter
+set_context_factory!(server, create_client_context, DefaultLeaderType)
 
 # ============================================================================
 # Base Velocity Controller
@@ -148,38 +175,40 @@ base_ctrl = BaseVelocityController(
     timeout = 0.5       # Seconds before velocities reset to 0
 )
 
-# Get arm joint state (in degrees) using SO101-compatible names
-function get_joint_state(model, data)
-    state = Dict{String, Float64}()
-    for native_name in ARM_ACTUATORS
-        joint_id = mj_name2id(model, Int32(LibMuJoCo.mjOBJ_JOINT), native_name)
-        if joint_id >= 0
-            addr = model.jnt_qposadr[joint_id + 1] + 1
-            # Use SO101-compatible name in the output
-            compatible_name = JOINT_NAME_REVERSE_MAP[native_name]
-            state[compatible_name] = rad2deg(data.qpos[addr])
+# Get joint state: arm joints (leader-compatible names) + wheel velocities (rad/s)
+# Supports per-client context for different leader types
+function get_joint_state(model, data, ctx = nothing)
+    # Use provided context or fall back to default
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
+
+    # Get arm state in leader-compatible names
+    state = get_state_for_leader(teleop_ctx, model, data)
+
+    # Add wheel velocities (rad/s) from MuJoCo simulation
+    for (i, joint_name) in enumerate(WHEEL_JOINT_NAMES)
+        if haskey(wheel_qvel_indices, joint_name)
+            qvel_idx = wheel_qvel_indices[joint_name]
+            velocity = data.qvel[qvel_idx]  # rad/s
+            state[WHEEL_STATE_NAMES[i]] = velocity
         end
     end
+
     return state
 end
 
-# Apply joint commands (degrees -> radians) with name mapping
-function apply_joint_command!(data, actuator_map, joints)
-    for (name, val) in joints
-        name_str = String(name)
+# Apply joint commands (degrees -> radians) with teleop mapping
+# Supports per-client context for different leader types
+function apply_joint_command!(data, actuator_map, joints, ctx = nothing)
+    # Use provided context or fall back to default
+    teleop_ctx = ctx !== nothing ? ctx : default_teleop_ctx
 
-        # Map to native name if using SO101-compatible name
-        native_name = get(JOINT_NAME_MAP, name_str, nothing)
-        if native_name === nothing
-            @warn "Unknown joint name: $name_str"
-            continue
-        end
+    joints_float = Dict{String, Float64}(String(k) => Float64(v) for (k, v) in joints)
+    mapped_joints = map_joints(teleop_ctx, joints_float, model, data)
 
-        if haskey(actuator_map, native_name)
-            idx = actuator_map[native_name]
-            data.ctrl[idx] = deg2rad(Float64(val))
-        else
-            @warn "Actuator not found: $native_name"
+    for (name, val) in mapped_joints
+        if haskey(actuator_map, name)
+            idx = actuator_map[name]
+            data.ctrl[idx] = deg2rad(val)
         end
     end
 end
@@ -197,7 +226,7 @@ function handle_base_velocity_command!(raw::Dict)
 end
 
 # Start WebSocket server
-start_server!(server, get_joint_state)
+start!(server, get_joint_state)
 
 # ============================================================================
 # Controller Function
@@ -226,7 +255,10 @@ function ctrl!(m, d)
         if cmd == "set_joints_state"
             joints = get(raw, "joints", Dict())
             if !isempty(joints)
-                apply_joint_command!(d, actuator_map, joints)
+                # Get per-client context if available
+                ws = get(raw, "_ws", nothing)
+                client_ctx = ws !== nothing ? get_client_context(server, ws) : nothing
+                apply_joint_command!(d, actuator_map, joints, client_ctx)
             end
         end
     end
@@ -257,14 +289,14 @@ capture_config = CaptureConfig(
             name = "front",
             mode = :fixed,
             model_camera = "front",
-            output = WebSocketOutput(port = 8082)
+            output = WebSocketOutput(server = server)
         ),
         # Wrist camera: built-in model camera on the gripper
         CameraSpec(
             name = "wrist",
             mode = :fixed,
             model_camera = "wrist",
-            output = WebSocketOutput(port = 8083)
+            output = WebSocketOutput(server = server)
         ),
         # Left side camera: external view from the left
         CameraSpec(
@@ -273,7 +305,7 @@ capture_config = CaptureConfig(
             distance = 1.0,
             azimuth = 90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8084)
+            output = WebSocketOutput(server = server)
         ),
         # Right side camera: external view from the right
         CameraSpec(
@@ -282,10 +314,17 @@ capture_config = CaptureConfig(
             distance = 1.0,
             azimuth = -90.0,
             elevation = -20.0,
-            output = WebSocketOutput(port = 8085)
+            output = WebSocketOutput(server = server)
         )
     ]
 )
+
+# Register camera endpoints with the unified server
+for cam in capture_config.cameras
+    if cam.output isa WebSocketOutput && cam.output.server !== nothing
+        register_camera!(server, cam.name)
+    end
+end
 
 # ============================================================================
 # Run Visualization
@@ -293,18 +332,23 @@ capture_config = CaptureConfig(
 println("\nInitializing visualizer...")
 init_visualiser()
 
-println("\n" * "="^60)
+print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
+println("\nPer-client leader type support:")
+println("  Default (CLI):     --leader=so101")
+println("  Per-connection:    ws://...?leader=so101")
+println("                     ws://...?leader=lekiwi")
+println("                     ws://...?leader=trossen")
+
+println("\n" * "=" ^ 60)
 println("LeKiwi Mobile Manipulator Simulation")
-println("="^60)
-println("\nWebSocket Endpoints:")
-println("  Control: ws://localhost:8081")
-println("  Front camera: ws://localhost:8082")
-println("  Wrist camera: ws://localhost:8083")
-println("  Left side camera: ws://localhost:8084")
-println("  Right side camera: ws://localhost:8085")
-println("\nArm Control (via WebSocket):")
-println("  Joint names: shoulder_pan, shoulder_lift, elbow_flex,")
-println("               wrist_flex, wrist_roll, gripper")
+println("=" ^ 60)
+println("\nWebSocket Endpoints (all on port 8080):")
+println("  Control:           ws://localhost:8080/lekiwi/control")
+println("  Control (custom):  ws://localhost:8080/lekiwi/control?leader=<type>")
+println("  Front camera:      ws://localhost:8080/lekiwi/cameras/front")
+println("  Wrist camera:      ws://localhost:8080/lekiwi/cameras/wrist")
+println("  Left side camera:  ws://localhost:8080/lekiwi/cameras/side_left")
+println("  Right side camera: ws://localhost:8080/lekiwi/cameras/side_right")
 println("\nBase Control (keyboard):")
 println("  W/S - Forward/backward")
 println("  A/D - Rotate left/right")
@@ -312,7 +356,7 @@ println("  Q/E - Strafe left/right")
 println("  Shift - Double speed")
 println("\nBase Control (WebSocket):")
 println("  {\"command\": \"set_base_velocity\", \"vx\": 0.1, \"vy\": 0.0, \"omega\": 0.3}")
-println("="^60)
+println("=" ^ 60)
 println("\nPress 'Space' to pause/unpause, 'F1' for help, close window to exit\n")
 
 run_with_capture!(model, data,

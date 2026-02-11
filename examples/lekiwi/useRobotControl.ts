@@ -4,7 +4,7 @@ import useWebSocket, { ReadyState } from 'react-use-websocket';
 // =============================================================================
 // Constants (matching gamepad.html)
 // =============================================================================
-const WS_URL = 'ws://localhost:8081';
+const WS_URL = 'ws://localhost:8080/lekiwi/control';
 const SEND_RATE_MS = 33; // ~30Hz
 
 // Velocity limits (matching BaseController.jl defaults)

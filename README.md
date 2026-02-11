@@ -1,34 +1,28 @@
-# Geti Action MuJoCo Simulation Example
+# RobotSimServer.jl
 
-A proof-of-concept demonstrating how to integrate MuJoCo robot arm simulations with [Geti Action](https://geti.ai).
-
-## What is Geti Action?
-
-Geti Action is a local desktop application for robotics researchers and developers to:
-
-1. **Collect teleoperation data** on their own hardware
-2. **Train VLA (Vision-Language-Action) models** locally on their machine
-3. **Deploy optimized models** to robots using Intel silicon
-
-Think "Stable Diffusion WebUI" but for robot training.
+A multi-robot MuJoCo simulation server with WebSocket/ZMQ control, multi-camera streaming, and cross-robot teleoperation. Written in Julia.
 
 ## What is this repository?
 
-This repository provides example MuJoCo simulations that can be controlled via WebSocket, allowing Geti Action to:
+This repository provides a simulation server for controlling robot arms via WebSocket or ZMQ. It supports multiple robot types with:
 
-- Send joint commands to simulated robot arms
-- Receive real-time joint state feedback
-- Stream camera feeds from multiple viewpoints (including gripper-mounted cameras)
+- Joint position control and real-time state feedback
+- Multi-camera streaming (front, side, orbit, gripper, wrist views)
+- Cross-robot teleoperation (e.g., SO101 leader controlling a Franka follower)
+- URDF generation and mesh asset serving for web-based 3D visualization
 
 ## Features
 
-- **Multi-robot support**: SO101, Trossen WXAI, Franka Panda, and 19 Fanuc industrial robot families (33 variants)
-- **WebSocket control interface**: JSON-based protocol on port 8081
+- **Unified multi-robot server**: Single server (port 8080) for all robot types with lazy startup/auto-shutdown
+- **Multi-robot support**: SO101, LeKiwi, Trossen WXAI, Franka Panda, and Fanuc industrial robots
+- **Cross-robot teleoperation**: Control any robot with any leader (e.g., SO101 controlling Franka)
+- **WebSocket control interface**: JSON-based protocol with per-client configuration
 - **ZMQ control interface**: Alternative REQ/REP protocol on port 5555
 - **Multi-camera capture system**:
-  - WebSocket streaming (multiple cameras, multiple ports)
+  - WebSocket streaming (multiple cameras per robot)
   - Video file output (FFMPEG-based, crash-safe)
   - Image sequence output (JPEG/PNG)
+- **Asset serving**: URDF and mesh files served via HTTP for web-based 3D visualization
 - **Scene builder**: Programmatically add graspable objects, body-mounted cameras, and collision primitives
 - **Real-time state broadcasting**: 30fps joint state updates to all connected clients
 
@@ -40,8 +34,8 @@ This project uses [mise](https://mise.jdx.dev) for tool version management, envi
 
 ```bash
 # Clone with submodules
-git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
-cd geti-action-mujoco-sim
+git clone --recursive git@github.com:MarkRedeman/RobotSimServer.jl.git
+cd RobotSimServer.jl
 
 # Trust and install tools (installs Julia 1.12.4)
 mise trust && mise install
@@ -49,10 +43,11 @@ mise trust && mise install
 # Install dependencies and MuJoCo visualizer
 mise run setup
 
-# Run SO101 with WebSocket control
-mise run so101
+# Start the unified multi-robot server (recommended)
+mise run server
 
-# Run Trossen WXAI with WebSocket control
+# Or run individual robot simulations
+mise run so101
 mise run trossen
 ```
 
@@ -61,6 +56,8 @@ mise run trossen
 | Task | Description |
 |------|-------------|
 | `mise run setup` | Install dependencies and MuJoCo visualizer |
+| `mise run server` | Start unified multi-robot server (port 8080) |
+| `mise run server:8888` | Start unified server on port 8888 |
 | `mise run so101` | Run SO101 robot with WebSocket control |
 | `mise run trossen` | Run Trossen robot with WebSocket control |
 | `mise run franka` | Run Franka Panda with WebSocket control |
@@ -80,8 +77,8 @@ If you prefer not to use mise, ensure [Julia](https://julialang.org/downloads/) 
 
 ```bash
 # Clone with submodules
-git clone --recursive git@github.com:MarkRedeman/geti-action-mujoco-sim.git
-cd geti-action-mujoco-sim
+git clone --recursive git@github.com:MarkRedeman/RobotSimServer.jl.git
+cd RobotSimServer.jl
 
 # Install dependencies
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
@@ -104,7 +101,15 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 .
 ├── src/                           # Reusable library code
 │   ├── SceneBuilder.jl            # Add objects, cameras, collisions to scenes
+│   ├── RobotTypes.jl              # Robot type definitions and joint mappings
+│   ├── TeleoperatorMapping.jl     # Cross-robot teleoperation support
 │   ├── WebSocketServer.jl         # Shared WebSocket control server logic
+│   ├── HeadlessRenderer.jl        # Offscreen OpenGL rendering
+│   ├── SimulationInstance.jl      # Single robot simulation encapsulation
+│   ├── SimulationManager.jl       # Multi-robot orchestration
+│   ├── RobotConfigs.jl            # Robot configuration factories
+│   ├── AssetServer.jl             # HTTP serving for URDF/meshes
+│   ├── URDFGenerator.jl           # MJCF to URDF conversion
 │   └── capture/                   # Multi-camera capture system
 │       ├── Capture.jl             # Main capture module
 │       ├── types.jl               # Type definitions
@@ -127,6 +132,9 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │   ├── franka/                    # Franka Panda examples
 │   │   ├── basic_sim.jl           # Simple sine wave demo
 │   │   └── websocket_sim.jl       # Full WebSocket + cameras + IK
+│   ├── lekiwi/                    # LeKiwi mobile robot examples
+│   │   ├── basic_sim.jl           # Mobile base demo
+│   │   └── websocket_sim.jl       # Full WebSocket + cameras
 │   ├── fanuc/                     # Fanuc industrial robot examples
 │   │   └── basic_sim.jl           # Multi-robot demo (19+ robots)
 │   └── clients/                   # Test client examples
@@ -147,7 +155,95 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 │
 ├── Project.toml                   # Julia project dependencies
 ├── Manifest.toml                  # Locked dependency versions
-└── mise.toml                      # Mise configuration (tools, env, tasks)
+├── mise.toml                      # Mise configuration (tools, env, tasks)
+└── unified_server.jl              # Unified multi-robot server entry point
+## Unified Multi-Robot Server
+
+The unified server is the recommended way to run simulations. It provides a single HTTP/WebSocket endpoint for all robots with automatic lifecycle management.
+
+### Starting the Server
+
+```bash
+# Using mise (recommended)
+mise run server
+
+# Using mise with custom port
+mise run server:8888
+
+# Manual (without mise)
+julia --project=. -t 4 unified_server.jl
+julia --project=. -t 4 unified_server.jl --port 8888
+```
+
+### Server Features
+
+- **Single port** (default 8080) serves all robot types
+- **Lazy startup**: Simulations start when first client connects
+- **Auto-shutdown**: Simulations stop 30 seconds after last client disconnects
+- **Per-client leader types**: Each client can specify their leader robot via query parameter
+- **Asset serving**: URDF and mesh files served via HTTP for web visualization
+- **CORS enabled**: Works with browser-based clients
+
+### Server Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Info page with available robots and active simulations |
+| `GET /robots` | JSON list of available and active robots |
+| `GET /health` | Health check endpoint |
+| `WS /{robot}/control?leader=X` | Control WebSocket for robot |
+| `WS /{robot}/cameras/{name}` | Camera stream WebSocket |
+| `GET /{robot}/urdf` | Robot URDF (auto-generated if needed) |
+| `GET /{robot}/meshes/{path}` | Mesh/texture files |
+
+### Supported Robot IDs
+
+| Robot ID | Description |
+|----------|-------------|
+| `so101` | SO-ARM100 desktop robot arm |
+| `lekiwi` | LeKiwi mobile manipulator |
+| `trossen/wxai` or `trossen` | Trossen Robotics WXAI arm |
+| `franka` | Franka Emika Panda |
+| `fanuc/m10ia` | Fanuc M-10iA (default) |
+| `fanuc/{variant}` | Any Fanuc variant (e.g., `fanuc/crx10ial`) |
+
+### Example: Connecting to Multiple Robots
+
+```bash
+# Start the unified server
+mise run server
+
+# In separate terminals, connect clients to different robots:
+# Terminal 1: Control SO101
+wscat -c "ws://localhost:8080/so101/control"
+
+# Terminal 2: Control Franka with SO101 as leader
+wscat -c "ws://localhost:8080/franka/control?leader=so101"
+
+# Terminal 3: View SO101 front camera
+wscat -c "ws://localhost:8080/so101/cameras/front"
+```
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     SimulationManager (port 8080)                   │
+│                                                                      │
+│  HTTP Router                                                        │
+│    /{robot}/control  → WebSocket → SimulationInstance               │
+│    /{robot}/cameras  → WebSocket → Camera streams                   │
+│    /{robot}/urdf     → HTTP      → URDF file                        │
+│    /{robot}/meshes   → HTTP      → Mesh files                       │
+│                                                                      │
+│  Active Simulations (started on-demand)                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │ SO101        │  │ LeKiwi       │  │ Franka       │  ...          │
+│  │ (headless)   │  │ (headless)   │  │ (headless)   │               │
+│  └──────────────┘  └──────────────┘  └──────────────┘               │
+│                                                                      │
+│  Lifecycle: start on first client → stop 30s after last disconnect │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Supported Robots
@@ -158,6 +254,14 @@ A 6-DOF desktop robot arm with:
 - **Joints**: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
 - **Control**: Position control in degrees
 - **Gripper**: -10° (closed) to 100° (open)
+
+### LeKiwi
+
+A mobile manipulator with 3-wheel omnidirectional base and SO101-based arm:
+- **Arm Joints**: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
+- **Base**: 3 omnidirectional wheels for holonomic motion
+- **Cameras**: Front-facing and wrist-mounted cameras built into model
+- **Control**: Arm joints in degrees, base velocity commands
 
 ### Trossen WXAI
 
@@ -276,7 +380,12 @@ python examples/clients/zmq_client.py
 
 ### Connection
 
-Connect to `ws://localhost:8081` for joint control.
+**Unified Server (recommended):**
+- Connect to `ws://localhost:8080/{robot}/control` for joint control
+- Optionally specify leader type: `ws://localhost:8080/{robot}/control?leader=so101`
+
+**Individual Examples:**
+- Connect to `ws://localhost:8081` for joint control
 
 ### Commands
 
@@ -339,7 +448,30 @@ Broadcast at 30fps when joint state changes:
 
 ## Camera Streaming
 
-When running WebSocket simulations, camera feeds are available on separate ports:
+### Unified Server
+
+Camera feeds are available at `ws://localhost:8080/{robot}/cameras/{camera_name}`:
+
+| Robot | Available Cameras |
+|-------|-------------------|
+| so101 | front, side, orbit, gripper |
+| lekiwi | front, wrist, side_left, side_right |
+| trossen | front, side, orbit, gripper |
+| franka | front, side, orbit, gripper, wrist |
+| fanuc/* | front, side, orbit, gripper |
+
+Example:
+```bash
+# Stream SO101 front camera
+wscat -c "ws://localhost:8080/so101/cameras/front"
+
+# Stream Franka wrist camera
+wscat -c "ws://localhost:8080/franka/cameras/wrist"
+```
+
+### Individual Examples
+
+When running individual WebSocket simulations (e.g., `examples/so101/websocket_sim.jl`), camera feeds are available on separate ports:
 
 | Camera | Port | Description |
 |--------|------|-------------|
@@ -421,24 +553,6 @@ config = CaptureConfig(
 run_with_capture!(model, data, controller=ctrl!, capture=config)
 ```
 
-## Geti Action Integration
-
-To connect Geti Action to this simulation:
-
-1. Start a WebSocket simulation:
-   ```bash
-   julia --project=. -t 4 examples/so101/websocket_sim.jl
-   ```
-
-2. In Geti Action, configure the connection:
-   - **Control endpoint**: `ws://localhost:8081`
-   - **Camera streams**: `ws://localhost:8082` (front), `ws://localhost:8085` (gripper), etc.
-
-3. Geti Action can now:
-   - Send teleoperation commands from a leader arm
-   - Record synchronized camera feeds
-   - Collect training data from the simulated environment
-
 ## Dependencies
 
 - [MuJoCo.jl](https://github.com/JamieMair/MuJoCo.jl) - MuJoCo physics simulation
@@ -447,6 +561,9 @@ To connect Geti Action to this simulation:
 - [ZMQ.jl](https://github.com/JuliaInterop/ZMQ.jl) - ZeroMQ bindings
 - [Images.jl](https://github.com/JuliaImages/Images.jl) - Image processing
 - [FileIO.jl](https://github.com/JuliaIO/FileIO.jl) - File I/O
+- [EzXML.jl](https://github.com/JuliaIO/EzXML.jl) - XML parsing (for URDF generation)
+- [SHA.jl](https://github.com/JuliaLang/SHA.jl) - Hashing (for URDF caching)
+- [GLFW.jl](https://github.com/JuliaGL/GLFW.jl) - OpenGL context (for headless rendering)
 
 ## License
 

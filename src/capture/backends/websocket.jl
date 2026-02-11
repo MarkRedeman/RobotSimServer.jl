@@ -3,10 +3,87 @@
 using HTTP
 using HTTP.WebSockets
 
+# =============================================================================
+# Unified Server Mode (Recommended)
+# =============================================================================
+
+"""
+    UnifiedWebSocketBackendState
+
+State for WebSocket output using unified server.
+"""
+mutable struct UnifiedWebSocketBackendState
+    server::Any  # UnifiedServer
+    camera_name::String
+end
+
+"""
+    init_backend(backend::WebSocketOutput, camera_name::String, width::Int, height::Int, fps::Float64)
+
+Initialize WebSocket output backend.
+"""
+function init_backend(backend::WebSocketOutput, camera_name::String,
+        width::Int, height::Int, fps::Float64)
+
+    # New unified server mode
+    if backend.server !== nothing
+        # Camera should already be registered via register_camera!
+        # but we can check and warn if not
+        if !haskey(backend.server.cameras, camera_name)
+            @warn "Camera '$camera_name' not registered with server. Call register_camera!(server, \"$camera_name\") before starting."
+        end
+        println("WebSocketOutput($(camera_name)): using unified server")
+        return UnifiedWebSocketBackendState(backend.server, camera_name)
+    end
+
+    # =========================================================================
+    # LEGACY: Port-based mode - remove this block when all simulations migrated
+    # =========================================================================
+    return init_legacy_backend(backend, camera_name, width, height, fps)
+    # =========================================================================
+end
+
+"""
+    process_frame!(backend::WebSocketOutput, state::UnifiedWebSocketBackendState, work::CaptureWork)
+
+Encode frame and broadcast via unified server.
+"""
+function process_frame!(
+        backend::WebSocketOutput, state::UnifiedWebSocketBackendState, work::CaptureWork)
+
+    # Skip encoding if no clients connected
+    if get_camera_client_count(state.server, state.camera_name) == 0
+        return
+    end
+
+    # Convert to image and encode as JPEG
+    img = rgb_to_image(work.rgb_data, work.width, work.height)
+    io = IOBuffer()
+    save(Stream{format"JPEG"}(io), img)
+    jpeg_bytes = take!(io)
+
+    # Broadcast via unified server
+    broadcast_frame!(state.server, state.camera_name, jpeg_bytes)
+end
+
+"""
+    cleanup_backend!(backend::WebSocketOutput, state::UnifiedWebSocketBackendState)
+
+Cleanup unified WebSocket backend (no-op, server handles cleanup).
+"""
+function cleanup_backend!(backend::WebSocketOutput, state::UnifiedWebSocketBackendState)
+    println("WebSocketOutput($(state.camera_name)): detached from unified server")
+    # Server cleanup is handled by stop!(server)
+end
+
+# =============================================================================
+# LEGACY: Port-based mode - remove everything below when all simulations migrated
+# =============================================================================
+
 """
     WebSocketBackendState
 
-State for WebSocket output backend.
+State for WebSocket output backend (legacy port-based mode).
 Manages server and connected clients.
 """
 mutable struct WebSocketBackendState
@@ -19,11 +96,11 @@ mutable struct WebSocketBackendState
 end
 
 """
-    init_backend(backend::WebSocketOutput, camera_name::String, width::Int, height::Int, fps::Float64)
+    init_legacy_backend(backend::WebSocketOutput, camera_name::String, width::Int, height::Int, fps::Float64)
 
-Initialize WebSocket output backend. Starts a WS server on the specified port.
+Initialize legacy port-based WebSocket backend. Starts a WS server on the specified port.
 """
-function init_backend(backend::WebSocketOutput, camera_name::String,
+function init_legacy_backend(backend::WebSocketOutput, camera_name::String,
         width::Int, height::Int, fps::Float64)
     state = WebSocketBackendState(
         backend.port,
@@ -76,7 +153,7 @@ end
 """
     process_frame!(backend::WebSocketOutput, state::WebSocketBackendState, work::CaptureWork)
 
-Encode frame as JPEG and broadcast to all connected clients.
+Encode frame as JPEG and broadcast to all connected clients (legacy mode).
 """
 function process_frame!(
         backend::WebSocketOutput, state::WebSocketBackendState, work::CaptureWork)
@@ -117,7 +194,7 @@ end
 """
     cleanup_backend!(backend::WebSocketOutput, state::WebSocketBackendState)
 
-Cleanup WebSocket backend. Closes all connections and stops server.
+Cleanup WebSocket backend (legacy mode). Closes all connections and stops server.
 """
 function cleanup_backend!(backend::WebSocketOutput, state::WebSocketBackendState)
     state.running = false
@@ -137,3 +214,7 @@ function cleanup_backend!(backend::WebSocketOutput, state::WebSocketBackendState
 
     println("WebSocketOutput($(state.camera_name)): shutdown")
 end
+
+# =============================================================================
+# END LEGACY CODE
+# =============================================================================

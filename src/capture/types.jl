@@ -26,14 +26,28 @@ end
     WebSocketOutput
 
 Stream frames as raw JPEG bytes to WebSocket clients.
-Multiple clients can connect to the same port (broadcast mode).
+
+# Constructors
+- `WebSocketOutput(; server)` - Use unified server (recommended)
+- `WebSocketOutput(; port)` - Legacy: dedicated port per camera
 
 # Fields
-- `port::Int`: WebSocket server port
+- `port::Union{Int, Nothing}`: WebSocket server port (legacy mode)
+- `server::Any`: UnifiedServer reference (unified mode)
 """
-Base.@kwdef struct WebSocketOutput <: OutputBackend
-    port::Int
+struct WebSocketOutput <: OutputBackend
+    port::Union{Int, Nothing}
+    server::Any  # UnifiedServer, using Any to avoid circular dependency
 end
+
+# New constructor - unified server mode (recommended)
+WebSocketOutput(; server) = WebSocketOutput(server.port, server)
+
+# =============================================================================
+# LEGACY: Port-based constructor - remove when all simulations migrated
+# =============================================================================
+#WebSocketOutput(; port::Int) = WebSocketOutput(port, nothing)
+# =============================================================================
 
 """
     VideoOutput
