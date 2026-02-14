@@ -81,6 +81,7 @@ include(joinpath(PROJECT_ROOT, "src", "SimulationManager.jl"))
 
 function parse_args()
     port = 8080
+    host = "127.0.0.1"
 
     i = 1
     while i <= length(ARGS)
@@ -95,11 +96,13 @@ Usage:
 
 Options:
     --port PORT     Port to listen on (default: 8080)
+    --host HOST     Host/IP to bind to (default: 127.0.0.1)
     --help, -h      Show this help message
 
 Examples:
     julia --project=. -t 4 unified_server.jl
     julia --project=. -t 4 unified_server.jl --port 8888
+    julia --project=. -t 4 unified_server.jl --host 0.0.0.0
 
 Endpoints:
     ws://localhost:PORT/{robot}/control?leader=X  - Control WebSocket
@@ -126,6 +129,13 @@ Notes:
                 exit(1)
             end
             port = parse(Int, ARGS[i])
+        elseif arg == "--host"
+            i += 1
+            if i > length(ARGS)
+                @error "Missing host value after --host"
+                exit(1)
+            end
+            host = ARGS[i]
         else
             @warn "Unknown argument: $arg"
         end
@@ -133,7 +143,7 @@ Notes:
         i += 1
     end
 
-    return (port = port,)
+    return (port = port, host = host)
 end
 
 # =============================================================================
@@ -150,7 +160,7 @@ function main()
     println()
 
     # Create and start the manager
-    manager = SimulationManager(args.port, PROJECT_ROOT)
+    manager = SimulationManager(args.port, PROJECT_ROOT; host = args.host)
     start!(manager)
 
     println()

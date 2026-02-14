@@ -1,0 +1,16 @@
+services:
+  server:
+    build: .
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    environment:
+      - PORT=${PORT:-8080}
+      # Set to a fixed number to limit threads (default: auto = all available CPUs)
+      - JULIA_NUM_THREADS=auto
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Uncomment to limit CPU usage:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "4"

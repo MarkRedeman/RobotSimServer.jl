@@ -1,0 +1,44 @@
+# Exclude everything by default
+*
+
+# Allow only what the Docker build needs
+!Project.toml
+!Manifest.toml
+!unified_server.jl
+!src/
+!examples/
+
+# ---- robots/ ----
+# Allow robots/ but exclude heavy non-runtime content
+!robots/
+
+# Entirely unreferenced submodules
+robots/fanuc-industrial/
+robots/franka/
+
+# google-deepmind: only franka_emika_panda is used (saves ~1.66 GB)
+robots/google-deepmind/*
+!robots/google-deepmind/franka_emika_panda/
+
+# SO-ARM100: only Simulation/SO101 is used (saves ~234 MB)
+robots/SO-ARM100/STL/
+robots/SO-ARM100/STEP/
+robots/SO-ARM100/media/
+robots/SO-ARM100/Optional/
+robots/SO-ARM100/Mini/
+robots/SO-ARM100/Simulation/SO100/
+
+# Trossen: exclude unused robot variants
+robots/trossen_arm_mujoco/trossen_arm_mujoco/assets/mobile_ai/
+robots/trossen_arm_mujoco/trossen_arm_mujoco/assets/stationary_ai/
+
+# Lekiwi: exclude non-runtime files
+robots/lekiwi/docs/
+robots/lekiwi/dora/
+robots/lekiwi/crates/
+robots/lekiwi/.devcontainer/
+
+# Exclude common non-runtime files from all submodules
+robots/**/.git
+robots/**/.github
+robots/**/__pycache__
