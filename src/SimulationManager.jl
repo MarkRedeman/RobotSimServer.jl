@@ -58,6 +58,7 @@ Orchestrates multiple concurrent robot simulations.
 - Serves static assets (URDF, meshes)
 
 # Fields
+- `host::String`: Host/IP to bind to
 - `port::Int`: Port to listen on
 - `project_root::String`: Path to project root directory
 - `instances::Dict{String, SimulationInstance}`: Active simulation instances
@@ -68,6 +69,7 @@ Orchestrates multiple concurrent robot simulations.
 - `urdf_cache_dir::String`: Directory for caching generated URDFs
 """
 mutable struct SimulationManager
+    host::String
     port::Int
     project_root::String
     instances::Dict{String, SimulationInstance}
@@ -82,6 +84,7 @@ end
 
 """
     SimulationManager(port::Int, project_root::String;
+                      host::String="127.0.0.1",
                       shutdown_check_interval::Float64=5.0) -> SimulationManager
 
 Create a new simulation manager.
@@ -89,16 +92,19 @@ Create a new simulation manager.
 # Arguments
 - `port`: Port to listen on (e.g., 8080)
 - `project_root`: Path to project root directory
+- `host`: Host/IP to bind to (default: "127.0.0.1", use "0.0.0.0" for Docker)
 - `shutdown_check_interval`: Seconds between shutdown checks (default: 5.0)
 
 # Returns
 - `SimulationManager`: Ready to start
 """
 function SimulationManager(port::Int, project_root::String;
+        host::String = "127.0.0.1",
         shutdown_check_interval::Float64 = 5.0)
     urdf_cache_dir = joinpath(project_root, ".cache", "urdf")
 
     return SimulationManager(
+        host,
         port,
         project_root,
         Dict{String, SimulationInstance}(),
@@ -138,7 +144,7 @@ function start!(manager::SimulationManager)
 
     # Print available robots
     available_robots = list_available_robots()
-    println("SimulationManager starting on port $(manager.port)")
+    println("SimulationManager starting on $(manager.host):$(manager.port)")
     println("Available robots: $(join(available_robots, ", "))")
     println("\nEndpoints:")
     for robot_id in available_robots
@@ -155,7 +161,7 @@ function start!(manager::SimulationManager)
     # Start HTTP server
     manager.server_task = @async begin
         try
-            HTTP.serve!(manager.port; stream = true) do http
+            HTTP.serve!(manager.host, manager.port; stream = true) do http
                 handle_request!(manager, http)
             end
         catch e
@@ -511,7 +517,7 @@ function handle_root!(manager::SimulationManager, http)
     </html>
     """
 
-    serve_content!(http, html, "text/html")
+    serve_content!(http, html, "text/html; charset=utf-8")
 end
 
 """
