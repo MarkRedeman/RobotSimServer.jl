@@ -1,5 +1,12 @@
 # RobotSimServer.jl
 
+> [!NOTE]
+> This project started as an experiment in building a MuJoCo simulation
+> in Julia with [opencode](https://opencode.ai/). It has since evolved
+> into a server that lets clients control simulated robots via WebSocket,
+> serving as a reference for integrating and testing new robots without
+> needing physical hardware.
+
 A multi-robot MuJoCo simulation server with WebSocket/ZMQ control, multi-camera streaming, and cross-robot teleoperation. Written in Julia.
 
 ## What is this repository?
