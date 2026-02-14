@@ -95,6 +95,33 @@ julia --project=. -t 4 examples/trossen/websocket_sim.jl
 
 > **Note**: The `-t 4` flag enables multi-threading. With mise, `JULIA_NUM_THREADS=auto` is set automatically.
 
+### Using Docker Compose
+
+If you don't want to install Julia locally, you can run the server with Docker Compose:
+
+```bash
+# Clone with submodules
+git clone --recursive git@github.com:MarkRedeman/RobotSimServer.jl.git
+cd RobotSimServer.jl
+
+# Build and start the server
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+
+# Stop the server
+docker compose down
+```
+
+The server will be available at `http://localhost:8080`. To use a different port:
+
+```bash
+PORT=9090 docker compose up -d
+```
+
+> **Note**: The first build takes a while as it installs Julia packages and precompiles them. Subsequent builds are cached.
+
 ## Project Structure
 
 ```
