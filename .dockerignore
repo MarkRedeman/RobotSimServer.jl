@@ -1,0 +1,10 @@
+# Exclude everything by default
+*
+
+# Allow only what the Docker build needs
+!Project.toml
+!Manifest.toml
+!unified_server.jl
+!src/
+!robots/
+!examples/
