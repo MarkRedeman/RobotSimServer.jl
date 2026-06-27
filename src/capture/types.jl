@@ -4,7 +4,7 @@
     OutputBackend
 
 Abstract type for camera output backends.
-Concrete implementations: FileOutput, WebSocketOutput, VideoOutput
+Concrete implementations: FileOutput, WebSocketOutput, MJPEGOutput, VideoOutput
 """
 abstract type OutputBackend end
 
@@ -48,6 +48,26 @@ WebSocketOutput(; server) = WebSocketOutput(server.port, server)
 # =============================================================================
 #WebSocketOutput(; port::Int) = WebSocketOutput(port, nothing)
 # =============================================================================
+
+"""
+    MJPEGOutput
+
+Stream frames as multipart JPEG over HTTP.
+
+# Constructors
+- `MJPEGOutput(; port)` - Dedicated HTTP MJPEG stream port
+
+# Fields
+- `port::Union{Int, Nothing}`: HTTP stream port
+- `server::Any`: Reserved for future unified-server integration; set to `nothing`
+  in the current port-based implementation
+"""
+struct MJPEGOutput <: OutputBackend
+    port::Union{Int, Nothing}
+    server::Any
+end
+
+MJPEGOutput(; port::Int) = MJPEGOutput(port, nothing)
 
 """
     VideoOutput

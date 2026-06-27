@@ -33,8 +33,8 @@ end
 Encode and save a frame to disk.
 """
 function process_frame!(backend::FileOutput, state::FileBackendState, work::CaptureWork)
-    # Convert raw RGB buffer to image
-    # Data is already flipped (bottom-to-top -> top-to-bottom)
+    # Convert raw RGB buffer to image.
+    # Data is already flipped (bottom-to-top -> top-to-bottom).
     img = rgb_to_image(work.rgb_data, work.width, work.height)
 
     # Generate filename

@@ -2,7 +2,7 @@
 #
 # This script runs a MuJoCo simulation of the Franka Panda 7-DOF robot arm with:
 # - Unified WebSocket server on port 8080 with path-based routing
-# - Multi-camera capture (WebSocket streams)
+# - Multi-camera capture (WebSocket streams and MJPEG camera output)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
@@ -201,7 +201,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(server = server)
+            output = MJPEGOutput(port = 8091)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -258,10 +258,10 @@ println("Franka Panda Simulation with Teleoperation")
 println("="^70)
 print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
 println("\nWorkspace scale: $(round(workspace_scale(default_teleop_ctx), digits=2))x")
-println("\nWebSocket Endpoints (all on port 8080):")
+println("\nControl and camera endpoints:")
 println("  Control:        ws://localhost:8080/franka/control")
 println("  Control:        ws://localhost:8080/franka/control?leader=<type>")
-println("  Front camera:   ws://localhost:8080/franka/cameras/front")
+println("  Front camera:   http://localhost:8091/stream")
 println("  Side camera:    ws://localhost:8080/franka/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/franka/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/franka/cameras/gripper")

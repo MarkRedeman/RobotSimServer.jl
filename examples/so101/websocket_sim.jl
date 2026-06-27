@@ -2,7 +2,7 @@
 #
 # This script runs a MuJoCo simulation of the SO101 robot arm with:
 # - Unified WebSocket server on port 8080 with path-based routing
-# - Multi-camera capture (video files and WebSocket streams)
+# - Multi-camera capture (WebSocket streams and MJPEG camera output)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
@@ -133,7 +133,7 @@ function ctrl!(m, d)
 end
 
 # --- Camera Configuration ---
-# Multi-camera capture with WebSocket streaming for all cameras
+# Multi-camera capture with mixed transports
 capture_config = CaptureConfig(
     width = 640,
     height = 480,
@@ -146,7 +146,7 @@ capture_config = CaptureConfig(
             distance = 1.2,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(server = server)
+            output = MJPEGOutput(port = 8090)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -193,10 +193,10 @@ println("\n" * "="^70)
 println("SO101 Robot Arm Simulation")
 println("="^70)
 print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
-println("\nWebSocket Endpoints (all on port 8080):")
+println("\nControl and camera endpoints:")
 println("  Control:        ws://localhost:8080/so101/control")
 println("  Control:        ws://localhost:8080/so101/control?leader=<type>")
-println("  Front camera:   ws://localhost:8080/so101/cameras/front")
+println("  Front camera:   http://localhost:8090/stream")
 println("  Side camera:    ws://localhost:8080/so101/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/so101/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/so101/cameras/gripper")
