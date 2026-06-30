@@ -55,6 +55,8 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
         true
     )
 
+    # Runs the dedicated HTTP listener in the background; failures are logged and
+    # the task exits without interrupting the capture pipeline.
     state.server_task = @async begin
         try
             HTTP.listen("127.0.0.1", backend.port) do http

@@ -39,6 +39,8 @@ using JSON
 
 include("capture/mjpeg_utils.jl")
 
+const MJPEG_PATH_SEGMENTS = 3
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -110,7 +112,7 @@ mutable struct UnifiedServer
     robot::String
     control_channel::Channel{Dict{String, Any}}
     control_clients::Set{Any}
-    control_clients_lock::ReentrantLock
+    control_clients_lock::ReentrantLock  # Guards `control_clients`
     cameras::Dict{String, CameraEndpoint}
     cameras_lock::ReentrantLock  # Guards `cameras`
     mjpeg_cameras::Dict{String, MJPEGEndpoint}
@@ -148,7 +150,7 @@ function UnifiedServer(; port::Int = 8080, robot::String = "robot",
         robot,
         Channel{Dict{String, Any}}(10),
         Set{Any}(),
-        ReentrantLock(),
+        ReentrantLock(),  # control_clients_lock
         Dict{String, CameraEndpoint}(),
         ReentrantLock(),  # cameras_lock
         Dict{String, MJPEGEndpoint}(),
@@ -387,7 +389,9 @@ function handle_request!(
     else
         # Route: /{robot}/cameras/{name}/stream
         segments = split(subpath, "/"; keepempty = false)
-        if length(segments) == 3 && segments[1] == "cameras" && segments[3] == "stream"
+        if length(segments) == MJPEG_PATH_SEGMENTS &&
+           segments[1] == "cameras" &&
+           segments[3] == "stream"
             camera_name = segments[2]
             endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
 

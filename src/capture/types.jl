@@ -57,6 +57,7 @@ Stream frames as multipart JPEG over HTTP.
 # Constructors
 - `MJPEGOutput(; port)` - Dedicated HTTP MJPEG stream port
 - `MJPEGOutput(; server)` - Use the unified server under `/{robot}/cameras/{name}/stream`
+  (takes precedence if both `port` and `server` are provided)
 
 # Fields
 - `port::Union{Int, Nothing}`: HTTP stream port
