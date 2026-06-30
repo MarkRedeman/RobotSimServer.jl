@@ -12,8 +12,6 @@ mutable struct UnifiedMJPEGBackendState
     camera_name::String
 end
 
-const MJPEG_BOUNDARY = "frame"
-
 """
     MJPEGBackendState
 
@@ -82,8 +80,8 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
                 println("MJPEGOutput($(camera_name)): client connected ($(client_count) total)")
 
                 try
-                    # Keep the multipart response open so frames can be pushed
-                    # asynchronously until the server shuts down.
+                    # Keep the multipart response open while the capture system
+                    # pushes frames to connected clients.
                     wait(state.shutdown_condition)
                 catch e
                     if !(e isa EOFError)
@@ -106,13 +104,6 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
 
     println("MJPEGOutput: streaming $(camera_name) on http://127.0.0.1:$(backend.port)/stream")
     return state
-end
-
-function add_mjpeg_headers!(http)
-    HTTP.setheader(http, "Content-Type" => "multipart/x-mixed-replace; boundary=$MJPEG_BOUNDARY")
-    HTTP.setheader(http, "Cache-Control" => "no-cache, no-store, must-revalidate")
-    HTTP.setheader(http, "Pragma" => "no-cache")
-    HTTP.setheader(http, "Connection" => "keep-alive")
 end
 
 """

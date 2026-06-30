@@ -37,14 +37,7 @@ using HTTP
 using HTTP.WebSockets
 using JSON
 
-const MJPEG_BOUNDARY = "frame"
-
-function add_mjpeg_headers!(http)
-    HTTP.setheader(http, "Content-Type" => "multipart/x-mixed-replace; boundary=$MJPEG_BOUNDARY")
-    HTTP.setheader(http, "Cache-Control" => "no-cache, no-store, must-revalidate")
-    HTTP.setheader(http, "Pragma" => "no-cache")
-    HTTP.setheader(http, "Connection" => "keep-alive")
-end
+include("capture/mjpeg_utils.jl")
 
 # =============================================================================
 # Types
@@ -119,9 +112,9 @@ mutable struct UnifiedServer
     control_clients::Set{Any}
     control_clients_lock::ReentrantLock
     cameras::Dict{String, CameraEndpoint}
-    cameras_lock::ReentrantLock
+    cameras_lock::ReentrantLock  # Guards `cameras`
     mjpeg_cameras::Dict{String, MJPEGEndpoint}
-    mjpeg_cameras_lock::ReentrantLock
+    mjpeg_cameras_lock::ReentrantLock  # Guards `mjpeg_cameras`
     last_broadcast_time::Ref{Float64}
     broadcast_interval::Float64
     prev_state::Dict{String, Float64}
@@ -157,9 +150,9 @@ function UnifiedServer(; port::Int = 8080, robot::String = "robot",
         Set{Any}(),
         ReentrantLock(),
         Dict{String, CameraEndpoint}(),
-        ReentrantLock(),
+        ReentrantLock(),  # cameras_lock
         Dict{String, MJPEGEndpoint}(),
-        ReentrantLock(),
+        ReentrantLock(),  # mjpeg_cameras_lock
         Ref(0.0),
         1.0 / fps,
         Dict{String, Float64}(),
@@ -805,7 +798,7 @@ function broadcast_mjpeg_frame!(
         return
     end
 
-    header = "--$MJPEG_BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: $(length(jpeg_bytes))\r\n\r\n"
+    header = mjpeg_part_header(jpeg_bytes)
     failed_clients = Any[]
     for client in clients
         try

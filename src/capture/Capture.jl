@@ -38,6 +38,7 @@ using FileIO
 include("types.jl")
 include("worker.jl")
 include("utils.jl")
+include("mjpeg_utils.jl")
 include("backends/file.jl")
 include("backends/websocket.jl")
 include("backends/mjpeg.jl")
