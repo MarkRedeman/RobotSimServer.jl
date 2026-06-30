@@ -56,11 +56,7 @@ function process_frame!(
         return
     end
 
-    # Convert to image and encode as JPEG
-    img = rgb_to_image(work.rgb_data, work.width, work.height)
-    io = IOBuffer()
-    save(Stream{format"JPEG"}(io), img)
-    jpeg_bytes = take!(io)
+    jpeg_bytes = encode_jpeg_frame(work.rgb_data, work.width, work.height)
 
     # Broadcast via unified server
     broadcast_frame!(state.server, state.camera_name, jpeg_bytes)
@@ -164,13 +160,7 @@ function process_frame!(
         return  # No clients connected, skip encoding
     end
 
-    # Convert to image and encode as JPEG
-    img = rgb_to_image(work.rgb_data, work.width, work.height)
-
-    # Encode to JPEG bytes in memory
-    io = IOBuffer()
-    save(Stream{format"JPEG"}(io), img)
-    jpeg_bytes = take!(io)
+    jpeg_bytes = encode_jpeg_frame(work.rgb_data, work.width, work.height)
 
     # Broadcast to all clients
     failed_clients = HTTP.WebSockets.WebSocket[]

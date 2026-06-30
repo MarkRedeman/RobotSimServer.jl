@@ -3,6 +3,7 @@
 # Provides flexible per-camera output backends:
 # - FileOutput: Save frames as JPEG/PNG to disk
 # - WebSocketOutput: Stream frames to WebSocket clients
+# - MJPEGOutput: Stream frames as multipart JPEG over HTTP
 # - VideoOutput: Pipe to FFMPEG for crash-safe video recording
 #
 # Supports two camera modes:
@@ -36,8 +37,11 @@ using FileIO
 # Include all components
 include("types.jl")
 include("worker.jl")
+include("utils.jl")
+include("mjpeg_utils.jl")
 include("backends/file.jl")
 include("backends/websocket.jl")
+include("backends/mjpeg.jl")
 include("backends/video.jl")
 include("manager.jl")
 

@@ -2,7 +2,7 @@
 #
 # This script runs a MuJoCo simulation of the SO101 robot arm with:
 # - Unified WebSocket server on port 8080 with path-based routing
-# - Multi-camera capture (video files and WebSocket streams)
+# - Multi-camera capture (WebSocket streams and MJPEG camera output)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
@@ -133,7 +133,7 @@ function ctrl!(m, d)
 end
 
 # --- Camera Configuration ---
-# Multi-camera capture with WebSocket streaming for all cameras
+# Multi-camera capture with mixed transports
 capture_config = CaptureConfig(
     width = 640,
     height = 480,
@@ -146,7 +146,7 @@ capture_config = CaptureConfig(
             distance = 1.2,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(server = server)
+            output = MJPEGOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -182,6 +182,8 @@ capture_config = CaptureConfig(
 for cam in capture_config.cameras
     if cam.output isa WebSocketOutput && cam.output.server !== nothing
         register_camera!(server, cam.name)
+    elseif cam.output isa MJPEGOutput && cam.output.server !== nothing
+        register_mjpeg_camera!(server, cam.name)
     end
 end
 
@@ -193,13 +195,13 @@ println("\n" * "="^70)
 println("SO101 Robot Arm Simulation")
 println("="^70)
 print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
-println("\nWebSocket Endpoints (all on port 8080):")
-println("  Control:        ws://localhost:8080/so101/control")
-println("  Control:        ws://localhost:8080/so101/control?leader=<type>")
-println("  Front camera:   ws://localhost:8080/so101/cameras/front")
-println("  Side camera:    ws://localhost:8080/so101/cameras/side")
-println("  Orbit camera:   ws://localhost:8080/so101/cameras/orbit")
-println("  Gripper camera: ws://localhost:8080/so101/cameras/gripper")
+println("\nControl and camera endpoints:")
+println("  Control:        ws://localhost:$(server.port)/$(server.robot)/control")
+println("  Control:        ws://localhost:$(server.port)/$(server.robot)/control?leader=<type>")
+println("  Front camera:   http://localhost:$(server.port)/$(server.robot)/cameras/front/stream")
+println("  Side camera:    ws://localhost:$(server.port)/$(server.robot)/cameras/side")
+println("  Orbit camera:   ws://localhost:$(server.port)/$(server.robot)/cameras/orbit")
+println("  Gripper camera: ws://localhost:$(server.port)/$(server.robot)/cameras/gripper")
 println("\nPer-client leader type support:")
 println("  Default (CLI):     --leader=so101")
 println("  Per-connection:    ?leader=so101, ?leader=trossen, ?leader=lekiwi")

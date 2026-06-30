@@ -27,6 +27,7 @@ This repository provides a simulation server for controlling robot arms via WebS
 - **ZMQ control interface**: Alternative REQ/REP protocol on port 5555
 - **Multi-camera capture system**:
   - WebSocket streaming (multiple cameras per robot)
+  - MJPEG streaming over HTTP for browser-friendly camera feeds
   - Video file output (FFMPEG-based, crash-safe)
   - Image sequence output (JPEG/PNG)
 - **Asset serving**: URDF and mesh files served via HTTP for web-based 3D visualization
@@ -503,9 +504,19 @@ wscat -c "ws://localhost:8080/so101/cameras/front"
 wscat -c "ws://localhost:8080/franka/cameras/wrist"
 ```
 
+MJPEG feeds use the same robot prefix and add `/stream`:
+
+```bash
+curl -L "http://localhost:8080/so101/cameras/front/stream"
+```
+
+The bundled unified-server examples expose:
+- `http://localhost:8080/so101/cameras/front/stream`
+- `http://localhost:8080/franka/cameras/front/stream`
+
 ### Individual Examples
 
-When running individual WebSocket simulations (e.g., `examples/so101/websocket_sim.jl`), camera feeds are available on separate ports:
+When running dedicated simulations, camera feeds are exposed on their configured ports:
 
 | Camera | Port | Description |
 |--------|------|-------------|
@@ -515,7 +526,9 @@ When running individual WebSocket simulations (e.g., `examples/so101/websocket_s
 | Gripper | 8085 | First-person gripper view |
 | Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
-Each port streams raw JPEG frames over WebSocket.
+Legacy MJPEG streams use `http://localhost:<port>/stream` on the configured port.
+
+WebSocket cameras continue to stream raw JPEG frames over WebSocket.
 
 > **Note**: Franka Panda uses 5 cameras (ports 8082-8086) including both wrist and gripper cameras.
 
@@ -574,7 +587,10 @@ config = CaptureConfig(
         
         # Stream via WebSocket
         CameraSpec(name="side", azimuth=90.0, output=WebSocketOutput(port=8082)),
-        
+
+        # Stream via MJPEG over HTTP
+        CameraSpec(name="front_mjpeg", azimuth=180.0, output=MJPEGOutput(server=server)),
+
         # Save individual frames
         CameraSpec(name="top", elevation=-90.0, output=FileOutput("output/frames")),
         

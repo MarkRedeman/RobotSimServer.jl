@@ -2,7 +2,7 @@
 #
 # This script runs a MuJoCo simulation of the Franka Panda 7-DOF robot arm with:
 # - Unified WebSocket server on port 8080 with path-based routing
-# - Multi-camera capture (WebSocket streams)
+# - Multi-camera capture (WebSocket streams and MJPEG camera output)
 # - Gripper-mounted camera for first-person view
 # - Graspable cubes in the environment
 # - Interactive 3D visualization
@@ -201,7 +201,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 180.0,
             elevation = -20.0,
-            output = WebSocketOutput(server = server)
+            output = MJPEGOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -244,6 +244,8 @@ capture_config = CaptureConfig(
 for cam in capture_config.cameras
     if cam.output isa WebSocketOutput && cam.output.server !== nothing
         register_camera!(server, cam.name)
+    elseif cam.output isa MJPEGOutput && cam.output.server !== nothing
+        register_mjpeg_camera!(server, cam.name)
     end
 end
 
@@ -258,14 +260,14 @@ println("Franka Panda Simulation with Teleoperation")
 println("="^70)
 print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy)
 println("\nWorkspace scale: $(round(workspace_scale(default_teleop_ctx), digits=2))x")
-println("\nWebSocket Endpoints (all on port 8080):")
-println("  Control:        ws://localhost:8080/franka/control")
-println("  Control:        ws://localhost:8080/franka/control?leader=<type>")
-println("  Front camera:   ws://localhost:8080/franka/cameras/front")
-println("  Side camera:    ws://localhost:8080/franka/cameras/side")
-println("  Orbit camera:   ws://localhost:8080/franka/cameras/orbit")
-println("  Gripper camera: ws://localhost:8080/franka/cameras/gripper")
-println("  Wrist camera:   ws://localhost:8080/franka/cameras/wrist")
+println("\nControl and camera endpoints:")
+println("  Control:        ws://localhost:$(server.port)/$(server.robot)/control")
+println("  Control:        ws://localhost:$(server.port)/$(server.robot)/control?leader=<type>")
+println("  Front camera:   http://localhost:$(server.port)/$(server.robot)/cameras/front/stream")
+println("  Side camera:    ws://localhost:$(server.port)/$(server.robot)/cameras/side")
+println("  Orbit camera:   ws://localhost:$(server.port)/$(server.robot)/cameras/orbit")
+println("  Gripper camera: ws://localhost:$(server.port)/$(server.robot)/cameras/gripper")
+println("  Wrist camera:   ws://localhost:$(server.port)/$(server.robot)/cameras/wrist")
 println("\nPer-client leader type support:")
 println("  Default (CLI):     --leader=so101")
 println("  Per-connection:    ?leader=so101, ?leader=franka, ?leader=lekiwi")

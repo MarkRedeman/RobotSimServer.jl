@@ -4,7 +4,7 @@
     OutputBackend
 
 Abstract type for camera output backends.
-Concrete implementations: FileOutput, WebSocketOutput, VideoOutput
+Concrete implementations: FileOutput, WebSocketOutput, MJPEGOutput, VideoOutput
 """
 abstract type OutputBackend end
 
@@ -48,6 +48,35 @@ WebSocketOutput(; server) = WebSocketOutput(server.port, server)
 # =============================================================================
 #WebSocketOutput(; port::Int) = WebSocketOutput(port, nothing)
 # =============================================================================
+
+"""
+    MJPEGOutput
+
+Stream frames as multipart JPEG over HTTP.
+
+# Constructors
+- `MJPEGOutput(; port)` - Dedicated HTTP MJPEG stream port
+- `MJPEGOutput(; server)` - Use the unified server under `/{robot}/cameras/{name}/stream`
+  (takes precedence if both `port` and `server` are provided)
+
+# Fields
+- `port::Union{Int, Nothing}`: HTTP stream port
+- `server::Any`: UnifiedServer reference when using shared routing
+"""
+struct MJPEGOutput <: OutputBackend
+    port::Union{Int, Nothing}
+    server::Any
+end
+
+function MJPEGOutput(; port::Union{Int, Nothing} = nothing, server = nothing)
+    if server !== nothing
+        return MJPEGOutput(nothing, server)
+    elseif port !== nothing
+        return MJPEGOutput(port, nothing)
+    else
+        error("MJPEGOutput requires either `port` or `server` keyword argument")
+    end
+end
 
 """
     VideoOutput
