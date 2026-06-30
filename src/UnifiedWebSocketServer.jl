@@ -6,6 +6,7 @@
 #   ws://localhost:8080/{robot}/control          - Robot control commands
 #   ws://localhost:8080/{robot}/control?leader=X - Control with specific leader type
 #   ws://localhost:8080/{robot}/cameras/{name}   - Camera JPEG streams
+#   http://localhost:8080/{robot}/cameras/{name}/stream - MJPEG camera streams
 #
 # Per-Client Leader Types:
 #   Each control client can specify their own leader type via query parameter.
@@ -36,6 +37,15 @@ using HTTP
 using HTTP.WebSockets
 using JSON
 
+const MJPEG_BOUNDARY = "frame"
+
+function add_mjpeg_headers!(http)
+    HTTP.setheader(http, "Content-Type" => "multipart/x-mixed-replace; boundary=$MJPEG_BOUNDARY")
+    HTTP.setheader(http, "Cache-Control" => "no-cache, no-store, must-revalidate")
+    HTTP.setheader(http, "Pragma" => "no-cache")
+    HTTP.setheader(http, "Connection" => "keep-alive")
+end
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -56,6 +66,22 @@ function CameraEndpoint(name::String)
 end
 
 """
+    MJPEGEndpoint
+
+Manages HTTP clients for a single MJPEG stream.
+"""
+mutable struct MJPEGEndpoint
+    name::String
+    clients::Vector{Any}
+    clients_lock::ReentrantLock
+    shutdown_condition::Condition
+end
+
+function MJPEGEndpoint(name::String)
+    return MJPEGEndpoint(name, Any[], ReentrantLock(), Condition())
+end
+
+"""
     UnifiedServer
 
 Single-port WebSocket server with path-based routing for robot control and cameras.
@@ -71,6 +97,8 @@ to use different joint naming conventions simultaneously.
 - `control_clients_lock::ReentrantLock`: Lock for thread-safe client access
 - `cameras::Dict{String, CameraEndpoint}`: Registered camera endpoints
 - `cameras_lock::ReentrantLock`: Lock for camera registration
+- `mjpeg_cameras::Dict{String, MJPEGEndpoint}`: Registered MJPEG endpoints
+- `mjpeg_cameras_lock::ReentrantLock`: Lock for MJPEG camera registration
 - `last_broadcast_time::Ref{Float64}`: Time of last state broadcast
 - `broadcast_interval::Float64`: Minimum time between broadcasts (1/fps)
 - `prev_state::Dict{String, Float64}`: Previous state for change detection
@@ -92,6 +120,8 @@ mutable struct UnifiedServer
     control_clients_lock::ReentrantLock
     cameras::Dict{String, CameraEndpoint}
     cameras_lock::ReentrantLock
+    mjpeg_cameras::Dict{String, MJPEGEndpoint}
+    mjpeg_cameras_lock::ReentrantLock
     last_broadcast_time::Ref{Float64}
     broadcast_interval::Float64
     prev_state::Dict{String, Float64}
@@ -127,6 +157,8 @@ function UnifiedServer(; port::Int = 8080, robot::String = "robot",
         Set{Any}(),
         ReentrantLock(),
         Dict{String, CameraEndpoint}(),
+        ReentrantLock(),
+        Dict{String, MJPEGEndpoint}(),
         ReentrantLock(),
         Ref(0.0),
         1.0 / fps,
@@ -199,6 +231,23 @@ function register_camera!(server::UnifiedServer, name::String)
     println("Registered camera endpoint: /$(server.robot)/cameras/$name")
 end
 
+"""
+    register_mjpeg_camera!(server::UnifiedServer, name::String)
+
+Register an MJPEG camera endpoint. Creates the path /{robot}/cameras/{name}/stream.
+Must be called before start!().
+"""
+function register_mjpeg_camera!(server::UnifiedServer, name::String)
+    @lock server.mjpeg_cameras_lock begin
+        if haskey(server.mjpeg_cameras, name)
+            @warn "MJPEG camera '$name' already registered"
+            return
+        end
+        server.mjpeg_cameras[name] = MJPEGEndpoint(name)
+    end
+    println("Registered MJPEG camera endpoint: /$(server.robot)/cameras/$name/stream")
+end
+
 # =============================================================================
 # Server Start/Stop
 # =============================================================================
@@ -232,6 +281,9 @@ function start!(server::UnifiedServer, get_state::Function)
     println("  Control: ws://localhost:$(server.port)$(robot_prefix)/control")
     for name in keys(server.cameras)
         println("  Camera '$name': ws://localhost:$(server.port)$(robot_prefix)/cameras/$name")
+    end
+    for name in keys(server.mjpeg_cameras)
+        println("  MJPEG '$name': http://localhost:$(server.port)$(robot_prefix)/cameras/$name/stream")
     end
 end
 
@@ -269,6 +321,22 @@ function stop!(server::UnifiedServer)
         end
     end
 
+    # Close MJPEG clients
+    @lock server.mjpeg_cameras_lock begin
+        for (_, endpoint) in server.mjpeg_cameras
+            @lock endpoint.clients_lock begin
+                for http in endpoint.clients
+                    try
+                        close(http)
+                    catch
+                    end
+                end
+                empty!(endpoint.clients)
+                notify(endpoint.shutdown_condition, all = true)
+            end
+        end
+    end
+
     println("UnifiedServer stopped")
 end
 
@@ -288,14 +356,6 @@ function handle_request!(
     # Parse path (strip query string if present)
     path = split(target, "?")[1]
 
-    # Only handle WebSocket upgrades
-    if !HTTP.WebSockets.isupgrade(http.message)
-        HTTP.setstatus(http, 404)
-        HTTP.startwrite(http)
-        write(http, "Not found - WebSocket endpoints only")
-        return
-    end
-
     # Must start with robot prefix
     if !startswith(path, robot_prefix * "/")
         HTTP.setstatus(http, 404)
@@ -307,27 +367,41 @@ function handle_request!(
     # Extract subpath after robot prefix
     subpath = path[(length(robot_prefix) + 1):end]
 
-    # Route: /{robot}/control or /{robot}/control?leader=X
-    if subpath == "/control"
-        HTTP.WebSockets.upgrade(http) do ws
-            # Pass full target (with query string) for per-client context setup
-            handle_control_client!(server, ws, get_state, target)
-        end
-        return
-    end
-
-    # Route: /{robot}/cameras/{name}
-    if startswith(subpath, "/cameras/")
-        camera_name = subpath[10:end]  # Strip "/cameras/"
-
-        # Check if camera is registered
-        endpoint = @lock server.cameras_lock get(server.cameras, camera_name, nothing)
-
-        if endpoint !== nothing
+    if HTTP.WebSockets.isupgrade(http.message)
+        # Route: /{robot}/control or /{robot}/control?leader=X
+        if subpath == "/control"
             HTTP.WebSockets.upgrade(http) do ws
-                handle_camera_client!(server, endpoint, ws)
+                # Pass full target (with query string) for per-client context setup
+                handle_control_client!(server, ws, get_state, target)
             end
             return
+        end
+
+        # Route: /{robot}/cameras/{name}
+        if startswith(subpath, "/cameras/")
+            camera_name = subpath[10:end]  # Strip "/cameras/"
+
+            # Check if camera is registered
+            endpoint = @lock server.cameras_lock get(server.cameras, camera_name, nothing)
+
+            if endpoint !== nothing
+                HTTP.WebSockets.upgrade(http) do ws
+                    handle_camera_client!(server, endpoint, ws)
+                end
+                return
+            end
+        end
+    else
+        # Route: /{robot}/cameras/{name}/stream
+        if startswith(subpath, "/cameras/") && endswith(subpath, "/stream") &&
+           length(subpath) > 16
+            camera_name = subpath[10:(end - 7)]  # Strip "/cameras/" and "/stream"
+            endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
+
+            if endpoint !== nothing
+                handle_mjpeg_client!(server, endpoint, http)
+                return
+            end
         end
     end
 
@@ -650,6 +724,31 @@ function handle_camera_client!(server::UnifiedServer, endpoint::CameraEndpoint, 
 end
 
 """
+    handle_mjpeg_client!(server, endpoint, http)
+
+Handle an MJPEG HTTP client connection.
+"""
+function handle_mjpeg_client!(server::UnifiedServer, endpoint::MJPEGEndpoint, http)
+    println("MJPEG '$(endpoint.name)' client connected")
+
+    add_mjpeg_headers!(http)
+    HTTP.startwrite(http)
+
+    @lock endpoint.clients_lock push!(endpoint.clients, http)
+
+    try
+        wait(endpoint.shutdown_condition)
+    catch e
+        if !(e isa EOFError)
+            @warn "MJPEG client error" exception = e
+        end
+    finally
+        @lock endpoint.clients_lock filter!(c -> c !== http, endpoint.clients)
+        println("MJPEG '$(endpoint.name)' client disconnected")
+    end
+end
+
+"""
     broadcast_frame!(server::UnifiedServer, camera_name::String, jpeg_bytes::Vector{UInt8})
 
 Broadcast a JPEG frame to all clients connected to the specified camera.
@@ -687,12 +786,70 @@ function broadcast_frame!(
 end
 
 """
+    broadcast_mjpeg_frame!(server::UnifiedServer, camera_name::String, jpeg_bytes::Vector{UInt8})
+
+Broadcast a multipart MJPEG frame to all clients connected to the specified camera.
+"""
+function broadcast_mjpeg_frame!(
+        server::UnifiedServer, camera_name::String, jpeg_bytes::Vector{UInt8})
+    endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
+
+    if endpoint === nothing
+        @warn "Unknown MJPEG camera: $camera_name"
+        return
+    end
+
+    clients = @lock endpoint.clients_lock copy(endpoint.clients)
+
+    if isempty(clients)
+        return
+    end
+
+    header = "--$MJPEG_BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: $(length(jpeg_bytes))\r\n\r\n"
+    failed_clients = Any[]
+    for client in clients
+        try
+            write(client, header)
+            write(client, jpeg_bytes)
+            write(client, "\r\n")
+        catch
+            push!(failed_clients, client)
+        end
+    end
+
+    if !isempty(failed_clients)
+        @lock endpoint.clients_lock begin
+            filter!(c -> !(c in failed_clients), endpoint.clients)
+        end
+        for client in failed_clients
+            try
+                close(client)
+            catch
+            end
+        end
+    end
+end
+
+"""
     get_camera_client_count(server::UnifiedServer, camera_name::String) -> Int
 
 Get the number of connected clients for a camera (useful for skipping encoding).
 """
 function get_camera_client_count(server::UnifiedServer, camera_name::String)
     endpoint = @lock server.cameras_lock get(server.cameras, camera_name, nothing)
+    if endpoint === nothing
+        return 0
+    end
+    return @lock endpoint.clients_lock length(endpoint.clients)
+end
+
+"""
+    get_mjpeg_client_count(server::UnifiedServer, camera_name::String) -> Int
+
+Get the number of connected MJPEG clients for a camera.
+"""
+function get_mjpeg_client_count(server::UnifiedServer, camera_name::String)
+    endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
     if endpoint === nothing
         return 0
     end

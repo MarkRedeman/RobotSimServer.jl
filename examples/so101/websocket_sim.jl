@@ -146,7 +146,7 @@ capture_config = CaptureConfig(
             distance = 1.2,
             azimuth = 180.0,
             elevation = -20.0,
-            output = MJPEGOutput(port = 8090)
+            output = MJPEGOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -182,6 +182,8 @@ capture_config = CaptureConfig(
 for cam in capture_config.cameras
     if cam.output isa WebSocketOutput && cam.output.server !== nothing
         register_camera!(server, cam.name)
+    elseif cam.output isa MJPEGOutput && cam.output.server !== nothing
+        register_mjpeg_camera!(server, cam.name)
     end
 end
 
@@ -196,7 +198,7 @@ print_teleop_banner(DefaultLeaderType, FollowerType, default_teleop_ctx.strategy
 println("\nControl and camera endpoints:")
 println("  Control:        ws://localhost:8080/so101/control")
 println("  Control:        ws://localhost:8080/so101/control?leader=<type>")
-println("  Front camera:   http://localhost:8090/stream")
+println("  Front camera:   http://localhost:8080/so101/cameras/front/stream")
 println("  Side camera:    ws://localhost:8080/so101/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/so101/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/so101/cameras/gripper")

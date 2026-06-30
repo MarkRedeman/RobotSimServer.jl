@@ -201,7 +201,7 @@ capture_config = CaptureConfig(
             distance = base_distance,
             azimuth = 180.0,
             elevation = -20.0,
-            output = MJPEGOutput(port = 8091)
+            output = MJPEGOutput(server = server)
         ),
         # Side camera: external view from the side
         CameraSpec(
@@ -244,6 +244,8 @@ capture_config = CaptureConfig(
 for cam in capture_config.cameras
     if cam.output isa WebSocketOutput && cam.output.server !== nothing
         register_camera!(server, cam.name)
+    elseif cam.output isa MJPEGOutput && cam.output.server !== nothing
+        register_mjpeg_camera!(server, cam.name)
     end
 end
 
@@ -261,7 +263,7 @@ println("\nWorkspace scale: $(round(workspace_scale(default_teleop_ctx), digits=
 println("\nControl and camera endpoints:")
 println("  Control:        ws://localhost:8080/franka/control")
 println("  Control:        ws://localhost:8080/franka/control?leader=<type>")
-println("  Front camera:   http://localhost:8091/stream")
+println("  Front camera:   http://localhost:8080/franka/cameras/front/stream")
 println("  Side camera:    ws://localhost:8080/franka/cameras/side")
 println("  Orbit camera:   ws://localhost:8080/franka/cameras/orbit")
 println("  Gripper camera: ws://localhost:8080/franka/cameras/gripper")

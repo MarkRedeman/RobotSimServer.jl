@@ -56,18 +56,26 @@ Stream frames as multipart JPEG over HTTP.
 
 # Constructors
 - `MJPEGOutput(; port)` - Dedicated HTTP MJPEG stream port
+- `MJPEGOutput(; server)` - Use the unified server under `/{robot}/cameras/{name}/stream`
 
 # Fields
 - `port::Union{Int, Nothing}`: HTTP stream port
-- `server::Any`: Reserved for future unified-server integration; set to `nothing`
-  in the current port-based implementation
+- `server::Any`: UnifiedServer reference when using shared routing
 """
 struct MJPEGOutput <: OutputBackend
     port::Union{Int, Nothing}
     server::Any
 end
 
-MJPEGOutput(; port::Int) = MJPEGOutput(port, nothing)
+function MJPEGOutput(; port::Union{Int, Nothing} = nothing, server = nothing)
+    if server !== nothing
+        return MJPEGOutput(server.port, server)
+    elseif port !== nothing
+        return MJPEGOutput(port, nothing)
+    else
+        error("MJPEGOutput requires either `port` or `server`")
+    end
+end
 
 """
     VideoOutput

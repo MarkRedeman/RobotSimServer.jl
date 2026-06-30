@@ -1,5 +1,6 @@
 using Test
 
+include(joinpath(@__DIR__, "..", "src", "UnifiedWebSocketServer.jl"))
 include(joinpath(@__DIR__, "..", "src", "capture", "Capture.jl"))
 
 const TEST_PORT = 8099
@@ -59,4 +60,29 @@ takebytes(client::FakeMJPEGClient) = copy(client.data)
 
     cleanup_backend!(MJPEGOutput(port = TEST_PORT), state)
     @test !client.open
+end
+
+@testset "Unified MJPEG backend" begin
+    rgb = UInt8[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]
+    jpeg = encode_jpeg_frame(rgb, 2, 2)
+    server = UnifiedServer(port = TEST_PORT, robot = "robot")
+    state = init_backend(MJPEGOutput(server = server), "camera", 2, 2, 30.0)
+
+    client = FakeMJPEGClient()
+    endpoint = server.mjpeg_cameras["camera"]
+    @lock endpoint.clients_lock push!(endpoint.clients, client)
+
+    work = CaptureWork(
+        "camera", FIRST_FRAME, rgb, 2, 2, MJPEGOutput(server = server), state, time())
+
+    process_frame!(MJPEGOutput(server = server), state, work)
+
+    payload = takebytes(client)
+    @test !isempty(payload)
+    prefix = collect(codeunits(mjpeg_part_header(jpeg)))
+    @test payload[1:length(prefix)] == prefix
+    @test length(payload) > length(prefix)
+
+    cleanup_backend!(MJPEGOutput(server = server), state)
+    stop!(server)
 end

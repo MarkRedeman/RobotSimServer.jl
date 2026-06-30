@@ -504,6 +504,12 @@ wscat -c "ws://localhost:8080/so101/cameras/front"
 wscat -c "ws://localhost:8080/franka/cameras/wrist"
 ```
 
+MJPEG feeds use the same robot prefix and add `/stream`:
+
+```bash
+curl -L "http://localhost:8080/so101/cameras/front/stream"
+```
+
 ### Individual Examples
 
 When running individual simulations, camera feeds can be exposed over WebSocket or MJPEG:
@@ -516,8 +522,8 @@ When running individual simulations, camera feeds can be exposed over WebSocket 
 | Gripper | 8085 | First-person gripper view |
 | Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
-MJPEG streams are exposed as `http://localhost:8090/stream` (SO101) and
-`http://localhost:8091/stream` (Franka) in the example simulations.
+MJPEG streams are exposed as `http://localhost:8080/so101/cameras/front/stream`
+and `http://localhost:8080/franka/cameras/front/stream` in the example simulations.
 
 WebSocket cameras continue to stream raw JPEG frames over WebSocket.
 
@@ -580,7 +586,7 @@ config = CaptureConfig(
         CameraSpec(name="side", azimuth=90.0, output=WebSocketOutput(port=8082)),
 
         # Stream via MJPEG over HTTP
-        CameraSpec(name="front_mjpeg", azimuth=180.0, output=MJPEGOutput(port=8090)),
+        CameraSpec(name="front_mjpeg", azimuth=180.0, output=MJPEGOutput(server=server)),
 
         # Save individual frames
         CameraSpec(name="top", elevation=-90.0, output=FileOutput("output/frames")),

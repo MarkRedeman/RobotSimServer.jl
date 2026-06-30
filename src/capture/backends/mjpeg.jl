@@ -2,6 +2,16 @@
 
 using HTTP
 
+"""
+    UnifiedMJPEGBackendState
+
+State for MJPEG output using the unified server.
+"""
+mutable struct UnifiedMJPEGBackendState
+    server::Any
+    camera_name::String
+end
+
 const MJPEG_BOUNDARY = "frame"
 
 """
@@ -26,6 +36,16 @@ Initialize MJPEG output backend.
 """
 function init_backend(backend::MJPEGOutput, camera_name::String,
         width::Int, height::Int, fps::Float64)
+    if backend.server !== nothing
+        if !haskey(backend.server.mjpeg_cameras, camera_name)
+            register_mjpeg_camera!(backend.server, camera_name)
+        end
+
+        println("MJPEGOutput($(camera_name)): using unified server")
+        println("MJPEGOutput($(camera_name)): streaming on http://127.0.0.1:$(backend.server.port)/$(backend.server.robot)/cameras/$(camera_name)/stream")
+        return UnifiedMJPEGBackendState(backend.server, camera_name)
+    end
+
     state = MJPEGBackendState(
         backend.port,
         camera_name,
@@ -144,6 +164,21 @@ function process_frame!(backend::MJPEGOutput, state::MJPEGBackendState, work::Ca
 end
 
 """
+    process_frame!(backend::MJPEGOutput, state::UnifiedMJPEGBackendState, work::CaptureWork)
+
+Encode frame and broadcast as multipart JPEG chunks via the unified server.
+"""
+function process_frame!(
+        backend::MJPEGOutput, state::UnifiedMJPEGBackendState, work::CaptureWork)
+    if get_mjpeg_client_count(state.server, state.camera_name) == 0
+        return
+    end
+
+    jpeg_bytes = encode_jpeg_frame(work.rgb_data, work.width, work.height)
+    broadcast_mjpeg_frame!(state.server, state.camera_name, jpeg_bytes)
+end
+
+"""
     cleanup_backend!(backend::MJPEGOutput, state::MJPEGBackendState)
 
 Cleanup MJPEG backend.
@@ -163,4 +198,13 @@ function cleanup_backend!(backend::MJPEGOutput, state::MJPEGBackendState)
     notify(state.shutdown_condition, all = true)
 
     println("MJPEGOutput($(state.camera_name)): shutdown")
+end
+
+"""
+    cleanup_backend!(backend::MJPEGOutput, state::UnifiedMJPEGBackendState)
+
+Cleanup MJPEG unified backend (no-op; unified server owns lifecycle).
+"""
+function cleanup_backend!(backend::MJPEGOutput, state::UnifiedMJPEGBackendState)
+    println("MJPEGOutput($(state.camera_name)): detached from unified server")
 end
