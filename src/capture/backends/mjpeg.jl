@@ -37,12 +37,11 @@ Initialize MJPEG output backend.
 function init_backend(backend::MJPEGOutput, camera_name::String,
         width::Int, height::Int, fps::Float64)
     if backend.server !== nothing
-        if !haskey(backend.server.mjpeg_cameras, camera_name)
-            register_mjpeg_camera!(backend.server, camera_name)
-        end
+        register_mjpeg_camera!(backend.server, camera_name)
 
         println("MJPEGOutput($(camera_name)): using unified server")
-        println("MJPEGOutput($(camera_name)): streaming on http://127.0.0.1:$(backend.server.port)/$(backend.server.robot)/cameras/$(camera_name)/stream")
+        println(
+            "MJPEGOutput($(camera_name)): streaming on http://127.0.0.1:$(backend.server.port)/$(backend.server.robot)/cameras/$(camera_name)/stream")
         return UnifiedMJPEGBackendState(backend.server, camera_name)
     end
 

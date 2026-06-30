@@ -393,9 +393,9 @@ function handle_request!(
         end
     else
         # Route: /{robot}/cameras/{name}/stream
-        if startswith(subpath, "/cameras/") && endswith(subpath, "/stream") &&
-           length(subpath) > 16
-            camera_name = subpath[10:(end - 7)]  # Strip "/cameras/" and "/stream"
+        segments = split(subpath, "/"; keepempty = false)
+        if length(segments) == 3 && segments[1] == "cameras" && segments[3] == "stream"
+            camera_name = segments[2]
             endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
 
             if endpoint !== nothing
