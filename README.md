@@ -510,9 +510,13 @@ MJPEG feeds use the same robot prefix and add `/stream`:
 curl -L "http://localhost:8080/so101/cameras/front/stream"
 ```
 
+The bundled unified-server examples expose:
+- `http://localhost:8080/so101/cameras/front/stream`
+- `http://localhost:8080/franka/cameras/front/stream`
+
 ### Individual Examples
 
-When running individual simulations, camera feeds can be exposed over WebSocket or MJPEG:
+When running dedicated simulations, camera feeds are exposed on their configured ports:
 
 | Camera | Port | Description |
 |--------|------|-------------|
@@ -522,8 +526,7 @@ When running individual simulations, camera feeds can be exposed over WebSocket 
 | Gripper | 8085 | First-person gripper view |
 | Wrist | 8086 | Wrist-mounted camera (Franka only) |
 
-MJPEG streams are exposed as `http://localhost:8080/so101/cameras/front/stream`
-and `http://localhost:8080/franka/cameras/front/stream` in the example simulations.
+Legacy MJPEG streams use `http://localhost:<port>/stream` on the configured port.
 
 WebSocket cameras continue to stream raw JPEG frames over WebSocket.
 

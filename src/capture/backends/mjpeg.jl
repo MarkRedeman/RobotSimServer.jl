@@ -27,6 +27,8 @@ mutable struct MJPEGBackendState
     running::Bool
 end
 
+const LEGACY_MJPEG_PATH = "/stream"
+
 """
     init_backend(backend::MJPEGOutput, camera_name::String, width::Int, height::Int, fps::Float64)
 
@@ -63,7 +65,7 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
                     return
                 end
 
-                if http.message.target != "/stream"
+                if http.message.target != LEGACY_MJPEG_PATH
                     HTTP.setstatus(http, 404)
                     HTTP.startwrite(http)
                     write(http, "Not found")
@@ -102,17 +104,9 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
         end
     end
 
-    println("MJPEGOutput: streaming $(camera_name) on http://127.0.0.1:$(backend.port)/stream")
+    println(
+        "MJPEGOutput: streaming $(camera_name) on http://127.0.0.1:$(backend.port)$(LEGACY_MJPEG_PATH)")
     return state
-end
-
-"""
-    mjpeg_part_header(jpeg_bytes::Vector{UInt8}) -> String
-
-Build a multipart MJPEG frame header.
-"""
-function mjpeg_part_header(jpeg_bytes::Vector{UInt8})
-    return "--$MJPEG_BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: $(length(jpeg_bytes))\r\n\r\n"
 end
 
 """
