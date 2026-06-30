@@ -73,7 +73,7 @@ function MJPEGOutput(; port::Union{Int, Nothing} = nothing, server = nothing)
     elseif port !== nothing
         return MJPEGOutput(port, nothing)
     else
-        error("MJPEGOutput requires either `port` or `server`")
+        error("MJPEGOutput requires either `port` or `server` keyword argument")
     end
 end
 

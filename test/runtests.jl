@@ -4,7 +4,7 @@ include(joinpath(@__DIR__, "..", "src", "UnifiedWebSocketServer.jl"))
 include(joinpath(@__DIR__, "..", "src", "capture", "Capture.jl"))
 
 const TEST_PORT = 8099
-const FIRST_FRAME = 1
+const TEST_FRAME_NUMBER = 1
 
 mutable struct FakeMJPEGClient <: IO
     data::Vector{UInt8}
@@ -48,7 +48,8 @@ takebytes(client::FakeMJPEGClient) = copy(client.data)
         true                # running
     )
     work = CaptureWork(
-        "camera", FIRST_FRAME, rgb, 2, 2, MJPEGOutput(port = TEST_PORT), state, time())
+        "camera", TEST_FRAME_NUMBER, rgb, 2, 2, MJPEGOutput(port = TEST_PORT), state,
+        time())
 
     process_frame!(MJPEGOutput(port = TEST_PORT), state, work)
 
@@ -73,7 +74,8 @@ end
     @lock endpoint.clients_lock push!(endpoint.clients, client)
 
     work = CaptureWork(
-        "camera", FIRST_FRAME, rgb, 2, 2, MJPEGOutput(server = server), state, time())
+        "camera", TEST_FRAME_NUMBER, rgb, 2, 2, MJPEGOutput(server = server), state,
+        time())
 
     process_frame!(MJPEGOutput(server = server), state, work)
 

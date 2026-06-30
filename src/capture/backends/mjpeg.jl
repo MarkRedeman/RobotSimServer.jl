@@ -61,14 +61,14 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
                 if http.message.method != "GET"
                     HTTP.setstatus(http, 405)
                     HTTP.startwrite(http)
-                    write(http, "Method not allowed")
+                    write(http, "Only GET method is supported for MJPEG streams")
                     return
                 end
 
                 if http.message.target != LEGACY_MJPEG_PATH
                     HTTP.setstatus(http, 404)
                     HTTP.startwrite(http)
-                    write(http, "Not found")
+                    write(http, "MJPEG stream endpoint is /stream")
                     return
                 end
 
