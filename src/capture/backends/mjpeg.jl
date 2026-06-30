@@ -70,7 +70,7 @@ function init_backend(backend::MJPEGOutput, camera_name::String,
                 if http.message.target != LEGACY_MJPEG_PATH
                     HTTP.setstatus(http, 404)
                     HTTP.startwrite(http)
-                    write(http, "MJPEG stream endpoint is /stream")
+                    write(http, "MJPEG stream endpoint for dedicated port mode is /stream")
                     return
                 end
 

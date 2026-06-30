@@ -38,15 +38,8 @@ takebytes(client::FakeMJPEGClient) = copy(client.data)
     @test !isempty(jpeg)
 
     client = FakeMJPEGClient()
-    state = MJPEGBackendState(
-        TEST_PORT,          # port
-        "camera",          # camera_name
-        nothing,            # server_task
-        Any[client],        # clients
-        ReentrantLock(),    # clients_lock
-        Condition(),        # shutdown_condition
-        true                # running
-    )
+    state = init_backend(MJPEGOutput(port = TEST_PORT), "camera", 2, 2, 30.0)
+    @lock state.clients_lock push!(state.clients, client)
     work = CaptureWork(
         "camera", TEST_FRAME_NUMBER, rgb, 2, 2, MJPEGOutput(port = TEST_PORT), state,
         time())

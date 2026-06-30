@@ -70,7 +70,7 @@ end
 
 function MJPEGOutput(; port::Union{Int, Nothing} = nothing, server = nothing)
     if server !== nothing
-        return MJPEGOutput(server.port, server)
+        return MJPEGOutput(nothing, server)
     elseif port !== nothing
         return MJPEGOutput(port, nothing)
     else

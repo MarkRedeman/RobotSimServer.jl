@@ -40,6 +40,9 @@ using JSON
 include("capture/mjpeg_utils.jl")
 
 const MJPEG_PATH_SEGMENTS = 3
+const MJPEG_ROUTE_CAMERA_INDEX = 1
+const MJPEG_ROUTE_NAME_INDEX = 2
+const MJPEG_ROUTE_STREAM_INDEX = 3
 
 # =============================================================================
 # Types
@@ -390,9 +393,9 @@ function handle_request!(
         # Route: /{robot}/cameras/{name}/stream
         segments = split(subpath, "/"; keepempty = false)
         if length(segments) == MJPEG_PATH_SEGMENTS &&
-           segments[1] == "cameras" &&
-           segments[3] == "stream"
-            camera_name = segments[2]
+           segments[MJPEG_ROUTE_CAMERA_INDEX] == "cameras" &&
+           segments[MJPEG_ROUTE_STREAM_INDEX] == "stream"
+            camera_name = segments[MJPEG_ROUTE_NAME_INDEX]
             endpoint = @lock server.mjpeg_cameras_lock get(server.mjpeg_cameras, camera_name, nothing)
 
             if endpoint !== nothing
